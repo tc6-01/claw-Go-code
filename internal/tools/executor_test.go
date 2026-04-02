@@ -205,6 +205,34 @@ func TestExecutorReturnsPromptDecisionAsToolMessage(t *testing.T) {
 	}
 }
 
+func TestExecutorRunsToolAfterConfirmation(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	executor := NewExecutor(registry, permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      permissions.ModeWorkspaceWrite,
+		EscalationPolicy: permissions.EscalationPrompt,
+		Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (bool, error) {
+			if req.ToolName != "bash" {
+				t.Fatalf("unexpected tool request: %#v", req)
+			}
+			return true, nil
+		}),
+	}))
+
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-bash-confirm", Name: "bash", Input: json.RawMessage(`{"command":"printf confirmed"}`)},
+		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !result.Trace.Success {
+		t.Fatalf("expected confirmed bash success, got %#v", result.Trace)
+	}
+	if !strings.Contains(result.Message.Content, "confirmed") {
+		t.Fatalf("unexpected bash output: %s", result.Message.Content)
+	}
+}
+
 func TestExecutorReturnsNotFoundError(t *testing.T) {
 	executor := NewExecutor(NewRegistry(nil), permissions.NewStaticEngine(permissions.ModeWorkspaceWrite))
 

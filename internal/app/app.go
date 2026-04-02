@@ -23,7 +23,15 @@ type App struct {
 	Runtime         runtime.Engine
 }
 
+type Options struct {
+	PermissionConfirmer permissions.Confirmer
+}
+
 func New(cfg config.Config) (*App, error) {
+	return NewWithOptions(cfg, Options{})
+}
+
+func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 	sessionStore := session.NewInMemoryStore()
 	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
 		"anthropic": anthropicprovider.New(anthropicprovider.NewConfig(cfg.Provider.Anthropic), nil),
@@ -34,6 +42,7 @@ func New(cfg config.Config) (*App, error) {
 	permissionEngine := permissions.NewStaticEngineWithOptions(permissions.Options{
 		DefaultMode:      cfg.Permission.Mode,
 		EscalationPolicy: cfg.Permission.EscalationPolicy,
+		Confirmer:        opts.PermissionConfirmer,
 	})
 	runtimeEngine := runtime.NewEngine(runtime.Dependencies{
 		Config:          cfg,

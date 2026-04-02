@@ -19,13 +19,24 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	application, err := app.New(cfg)
-	if err != nil {
-		log.Fatalf("build app: %v", err)
-	}
-
-	if err := application.Run(ctx, os.Args[1:]); err != nil {
-		log.Fatalf("run app: %v", err)
+	if cfg.CLI.Interactive && isTerminal(os.Stdin) && isTerminal(os.Stdout) {
+		application, err := app.NewWithOptions(cfg, app.Options{
+			PermissionConfirmer: newTerminalConfirmer(os.Stdin, os.Stdout),
+		})
+		if err != nil {
+			log.Fatalf("build app: %v", err)
+		}
+		if err := application.Run(ctx, os.Args[1:]); err != nil {
+			log.Fatalf("run app: %v", err)
+		}
+	} else {
+		application, err := app.New(cfg)
+		if err != nil {
+			log.Fatalf("build app: %v", err)
+		}
+		if err := application.Run(ctx, os.Args[1:]); err != nil {
+			log.Fatalf("run app: %v", err)
+		}
 	}
 }
 

@@ -52,3 +52,48 @@ func TestStaticEnginePromptsWhenEscalationPolicyIsPrompt(t *testing.T) {
 		t.Fatalf("unexpected decision: %#v", decision)
 	}
 }
+
+func TestStaticEngineUsesConfirmerToAllow(t *testing.T) {
+	engine := NewStaticEngineWithOptions(Options{
+		DefaultMode:      ModeWorkspaceWrite,
+		EscalationPolicy: EscalationPrompt,
+		Confirmer: ConfirmFunc(func(_ context.Context, req PermissionRequest) (bool, error) {
+			if req.ToolName != "bash" || req.Required != ModeDangerFull {
+				t.Fatalf("unexpected request: %#v", req)
+			}
+			return true, nil
+		}),
+	})
+	decision, err := engine.Decide(context.Background(), PermissionRequest{
+		ToolName:    "bash",
+		CurrentMode: ModeWorkspaceWrite,
+		Required:    ModeDangerFull,
+	})
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	if decision == nil || decision.Decision != DecisionAllow {
+		t.Fatalf("unexpected decision: %#v", decision)
+	}
+}
+
+func TestStaticEngineUsesConfirmerToDeny(t *testing.T) {
+	engine := NewStaticEngineWithOptions(Options{
+		DefaultMode:      ModeWorkspaceWrite,
+		EscalationPolicy: EscalationPrompt,
+		Confirmer: ConfirmFunc(func(_ context.Context, _ PermissionRequest) (bool, error) {
+			return false, nil
+		}),
+	})
+	decision, err := engine.Decide(context.Background(), PermissionRequest{
+		ToolName:    "bash",
+		CurrentMode: ModeWorkspaceWrite,
+		Required:    ModeDangerFull,
+	})
+	if err != nil {
+		t.Fatalf("Decide() error = %v", err)
+	}
+	if decision == nil || decision.Decision != DecisionDeny {
+		t.Fatalf("unexpected decision: %#v", decision)
+	}
+}
