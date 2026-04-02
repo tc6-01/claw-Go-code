@@ -1,0 +1,38 @@
+{
+  "last_nudged_by_team": {
+    "pua-skill-omx-plans-skeleton-g": {
+      "at": "2026-04-02T13:58:21.266Z",
+      "last_message_id": "",
+      "reason": "stale_leader_panes_alive"
+    },
+    "go-claude-code-v0-1-m2-provide": {
+      "at": "2026-04-02T14:40:16.116Z",
+      "last_message_id": "3d426059-3867-4321-a6b6-f1a3501c4902",
+      "reason": "all_workers_idle"
+    }
+  },
+  "last_idle_nudged_by_team": {
+    "go-claude-code-v0-1-m2-provide": {
+      "at": "2026-04-02T14:40:16.116Z",
+      "worker_count": 3
+    }
+  },
+  "progress_by_team": {
+    "pua-skill-omx-plans-skeleton-g": {
+      "signature": "{\"tasks\":[{\"id\":\"1\",\"owner\":\"worker-1\",\"status\":\"pending\"},{\"id\":\"2\",\"owner\":\"worker-2\",\"status\":\"pending\"},{\"id\":\"3\",\"owner\":\"worker-3\",\"status\":\"pending\"},{\"id\":\"4\",\"owner\":\"worker-4\",\"status\":\"pending\"}],\"workers\":[{\"worker\":\"worker-1\",\"state\":\"unknown\",\"current_task_id\":\"\",\"status_missing\":true,\"turn_count\":null,\"heartbeat_missing\":true},{\"worker\":\"worker-2\",\"state\":\"unknown\",\"current_task_id\":\"\",\"status_missing\":true,\"turn_count\":null,\"heartbeat_missing\":true},{\"worker\":\"worker-3\",\"state\":\"unknown\",\"current_task_id\":\"\",\"status_missing\":true,\"turn_count\":null,\"heartbeat_missing\":true},{\"worker\":\"worker-4\",\"state\":\"unknown\",\"current_task_id\":\"\",\"status_missing\":true,\"turn_count\":null,\"heartbeat_missing\":true}]}",
+      "last_progress_at": "2026-04-02T13:58:21.266Z",
+      "observed_at": "2026-04-02T13:58:49.589Z",
+      "missing_signal_workers": 4,
+      "work_remaining": true,
+      "leader_action_state": "still_actionable"
+    },
+    "go-claude-code-v0-1-m2-provide": {
+      "signature": "{\"tasks\":[{\"id\":\"1\",\"owner\":\"worker-1\",\"status\":\"in_progress\"},{\"id\":\"2\",\"owner\":\"worker-2\",\"status\":\"completed\"},{\"id\":\"3\",\"owner\":\"worker-3\",\"status\":\"completed\"}],\"workers\":[{\"worker\":\"worker-1\",\"state\":\"idle\",\"current_task_id\":\"\",\"status_missing\":false,\"turn_count\":null,\"heartbeat_missing\":true},{\"worker\":\"worker-2\",\"state\":\"idle\",\"current_task_id\":\"\",\"status_missing\":false,\"turn_count\":null,\"heartbeat_missing\":true},{\"worker\":\"worker-3\",\"state\":\"idle\",\"current_task_id\":\"\",\"status_missing\":false,\"turn_count\":null,\"heartbeat_missing\":true}]}",
+      "last_progress_at": "2026-04-02T14:40:16.116Z",
+      "observed_at": "2026-04-02T14:40:39.266Z",
+      "missing_signal_workers": 3,
+      "work_remaining": true,
+      "leader_action_state": "still_actionable"
+    }
+  }
+}
