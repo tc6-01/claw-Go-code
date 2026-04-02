@@ -75,11 +75,17 @@ func TestExecutorRunsToolAndBuildsToolMessage(t *testing.T) {
 	if !strings.Contains(result.Message.Content, `"contents":"ok"`) {
 		t.Fatalf("message content missing output: %s", result.Message.Content)
 	}
+	if result.Message.ToolResult == nil || result.Message.ToolResult.ToolCallID != "tool-1" {
+		t.Fatalf("unexpected tool result trace: %#v", result.Message.ToolResult)
+	}
 	if !result.Trace.Success {
 		t.Fatal("expected successful trace")
 	}
 	if result.Trace.Name != "read_file" {
 		t.Fatalf("trace name = %q", result.Trace.Name)
+	}
+	if result.Trace.Result == nil || result.Trace.Result.ToolCallID != "tool-1" {
+		t.Fatalf("unexpected trace result: %#v", result.Trace.Result)
 	}
 }
 
@@ -98,6 +104,25 @@ func TestExecutorReturnsPermissionFailureAsToolMessage(t *testing.T) {
 		t.Fatal("expected failed trace")
 	}
 	if !strings.Contains(result.Message.Content, "requires workspace-write") {
+		t.Fatalf("unexpected permission content: %s", result.Message.Content)
+	}
+}
+
+func TestExecutorUsesBuiltinPermissionModes(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	executor := NewExecutor(registry, permissions.NewStaticEngine(permissions.ModeWorkspaceWrite))
+
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-bash", Name: "bash", Input: json.RawMessage(`{"command":"pwd"}`)},
+		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Trace.Success {
+		t.Fatal("expected bash to be denied in workspace-write mode")
+	}
+	if !strings.Contains(result.Message.Content, "danger-full-access") {
 		t.Fatalf("unexpected permission content: %s", result.Message.Content)
 	}
 }

@@ -92,10 +92,11 @@ func (e *engine) Run(ctx context.Context, invocation Invocation) error {
 		}
 
 		for _, call := range result.toolCalls {
-			toolMessage, trace := e.executeTool(ctx, call)
+			toolMessage, trace, toolResult := e.executeTool(ctx, call)
 			sess.ToolTrace = append(sess.ToolTrace, trace)
 			sess.Messages = append(sess.Messages, toolMessage)
 			requestMessages = append(requestMessages, toolMessage)
+			e.applyToolSideEffects(sess, call.Name, toolResult)
 		}
 		sess.UpdatedAt = time.Now().UTC()
 		if err := e.deps.SessionStore.Save(ctx, sess); err != nil {
@@ -181,94 +182,41 @@ func (e *engine) runTurn(ctx context.Context, providerClient provider.Provider, 
 	return turnResult{assistant: assistant, toolCalls: toolCalls}, nil
 }
 
-func (e *engine) executeTool(ctx context.Context, call *types.ToolCall) (types.Message, types.ToolTraceEntry) {
-	startedAt := time.Now().UTC()
-	trace := types.ToolTraceEntry{
-		ID:        call.ID,
-		Name:      call.Name,
-		Input:     stringifyJSON(call.Input),
-		StartedAt: startedAt,
-		EndedAt:   startedAt,
-	}
-	message := types.Message{
-		Role:      types.RoleTool,
-		Name:      call.Name,
-		CreatedAt: startedAt,
-		Metadata: map[string]string{
-			"tool_call_id": call.ID,
+func (e *engine) executeTool(ctx context.Context, call *types.ToolCall) (types.Message, types.ToolTraceEntry, *types.ToolResult) {
+	executor := tools.NewExecutor(e.deps.ToolRegistry, e.deps.Permission)
+	result, err := executor.Execute(ctx, tools.ExecuteRequest{
+		Call: *call,
+		Env: tools.ToolEnv{
+			WorkingDir: e.deps.Config.WorkingDir,
+			Mode:       e.deps.Config.Permission.Mode,
 		},
-		ToolCalls: flattenToolCalls([]*types.ToolCall{call}),
-		ToolResult: &types.ToolResult{
-			ToolCallID: call.ID,
-			Name:       call.Name,
-		},
-	}
-
-	tool, ok := e.deps.ToolRegistry.Get(call.Name)
-	if !ok {
-		message.Content = fmt.Sprintf("tool %q not found", call.Name)
-		message.Metadata["error"] = "tool_not_found"
-		message.ToolResult.Error = message.Content
-		trace.Error = message.Content
-		trace.EndedAt = time.Now().UTC()
-		return message, trace
-	}
-
-	decision, err := e.deps.Permission.Decide(ctx, permissions.PermissionRequest{
-		ToolName:    call.Name,
-		CurrentMode: e.deps.Config.Permission.Mode,
-		Required:    e.deps.Config.Permission.Mode,
 	})
 	if err != nil {
-		message.Content = err.Error()
-		message.Metadata["error"] = "permission_error"
-		message.ToolResult.Error = err.Error()
-		trace.Error = err.Error()
-		trace.EndedAt = time.Now().UTC()
-		return message, trace
-	}
-	if decision != nil {
-		trace.Permission = string(decision.Decision)
-	}
-	if decision != nil && decision.Decision == permissions.DecisionDeny {
-		message.Content = decision.Reason
-		message.Metadata["error"] = "permission_denied"
-		message.ToolResult.Error = decision.Reason
-		trace.Error = decision.Reason
-		trace.EndedAt = time.Now().UTC()
-		return message, trace
-	}
-
-	result, execErr := tool.Execute(ctx, call.Input, tools.ToolEnv{
-		WorkingDir: e.deps.Config.WorkingDir,
-		Mode:       e.deps.Config.Permission.Mode,
-	})
-	trace.EndedAt = time.Now().UTC()
-	if execErr != nil {
-		message.Content = execErr.Error()
-		message.Metadata["error"] = "tool_execution_failed"
-		message.ToolResult.Error = execErr.Error()
-		trace.Error = execErr.Error()
-		return message, trace
-	}
-	trace.Success = true
-	message.Content = renderToolResult(result)
-	message.ToolResult = cloneToolResult(result)
-	trace.Result = cloneToolResult(result)
-	trace.Output = message.Content
-	if result != nil {
-		if result.ToolCallID != "" {
-			message.Metadata["tool_call_id"] = result.ToolCallID
+		now := time.Now().UTC()
+		toolResult := &types.ToolResult{
+			ToolCallID: call.ID,
+			Name:       call.Name,
+			Error:      err.Error(),
 		}
-		if result.Error != "" {
-			message.Metadata["tool_error"] = result.Error
-			trace.Error = result.Error
-		}
-		if result.Name != "" {
-			message.Name = result.Name
-		}
+		return types.Message{
+				Role:       types.RoleTool,
+				Name:       call.Name,
+				Content:    mustJSON(toolResult),
+				CreatedAt:  now,
+				Metadata:   map[string]string{"tool_call_id": call.ID, "error": "tool_execution_failed"},
+				ToolCalls:  flattenToolCalls([]*types.ToolCall{call}),
+				ToolResult: cloneToolResult(toolResult),
+			}, types.ToolTraceEntry{
+				ID:        call.ID,
+				Name:      call.Name,
+				Input:     stringifyJSON(call.Input),
+				Error:     err.Error(),
+				StartedAt: now,
+				EndedAt:   now,
+				Success:   false,
+			}, toolResult
 	}
-	return message, trace
+	return result.Message, result.Trace, result.Result
 }
 
 func shouldPersistAssistant(message types.Message) bool {
@@ -322,18 +270,22 @@ func messageMetadata(stopReason string, usage types.Usage, toolCallCount int, ba
 	return metadata
 }
 
-func renderToolResult(result *types.ToolResult) string {
+func cloneToolResult(result *types.ToolResult) *types.ToolResult {
 	if result == nil {
-		return ""
+		return nil
 	}
-	parts := make([]string, 0, 2)
-	if len(result.Output) > 0 {
-		parts = append(parts, stringifyJSON(result.Output))
+	cloned := *result
+	cloned.Output = append(json.RawMessage(nil), result.Output...)
+	return &cloned
+}
+
+func cloneToolCall(call *types.ToolCall) *types.ToolCall {
+	if call == nil {
+		return nil
 	}
-	if result.Error != "" {
-		parts = append(parts, result.Error)
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
+	cloned := *call
+	cloned.Input = append(json.RawMessage(nil), call.Input...)
+	return &cloned
 }
 
 func stringifyJSON(raw json.RawMessage) string {
@@ -352,20 +304,26 @@ func stringifyJSON(raw json.RawMessage) string {
 	return string(formatted)
 }
 
-func cloneToolResult(result *types.ToolResult) *types.ToolResult {
-	if result == nil {
-		return nil
+func mustJSON(v any) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
-	cloned := *result
-	cloned.Output = append(json.RawMessage(nil), result.Output...)
-	return &cloned
+	return string(data)
 }
 
-func cloneToolCall(call *types.ToolCall) *types.ToolCall {
-	if call == nil {
-		return nil
+func (e *engine) applyToolSideEffects(sess *types.Session, toolName string, result *types.ToolResult) {
+	if sess == nil || result == nil || result.Error != "" {
+		return
 	}
-	cloned := *call
-	cloned.Input = append(json.RawMessage(nil), call.Input...)
-	return &cloned
+	switch toolName {
+	case "todo_write":
+		var payload struct {
+			Todos []types.TodoItem `json:"todos"`
+		}
+		if err := json.Unmarshal(result.Output, &payload); err != nil {
+			return
+		}
+		sess.Todos = append([]types.TodoItem(nil), payload.Todos...)
+	}
 }

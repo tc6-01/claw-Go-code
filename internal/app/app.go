@@ -30,7 +30,7 @@ func New(cfg config.Config) (*App, error) {
 		"openai":    openaiprovider.New(openaiprovider.NewConfig(cfg.Provider.OpenAI), nil),
 		"noop":      provider.NoopProvider{},
 	})
-	toolRegistry := tools.NewRegistry(nil)
+	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
 	permissionEngine := permissions.NewStaticEngine(cfg.Permission.Mode)
 	runtimeEngine := runtime.NewEngine(runtime.Dependencies{
 		Config:          cfg,

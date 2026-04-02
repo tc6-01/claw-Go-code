@@ -3,6 +3,9 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"claude-go-code/internal/config"
@@ -111,7 +114,7 @@ func TestEngineRunExecutesToolCallsAndPersistsTrace(t *testing.T) {
 	if sess.Messages[2].Role != types.RoleTool {
 		t.Fatalf("expected tool role, got %s", sess.Messages[2].Role)
 	}
-	if sess.Messages[2].Content != `{"value":"hi"}` {
+	if !strings.Contains(sess.Messages[2].Content, `"tool_call_id":"call-1"`) || !strings.Contains(sess.Messages[2].Content, `"value":"hi"`) {
 		t.Fatalf("unexpected tool output: %q", sess.Messages[2].Content)
 	}
 	if sess.Messages[2].ToolResult == nil || sess.Messages[2].ToolResult.ToolCallID != "call-1" {
@@ -137,6 +140,156 @@ func TestEngineRunExecutesToolCallsAndPersistsTrace(t *testing.T) {
 	}
 	if sess.ToolTrace[0].Result == nil || sess.ToolTrace[0].Result.ToolCallID != "call-1" {
 		t.Fatalf("unexpected tool trace result: %#v", sess.ToolTrace[0].Result)
+	}
+}
+
+func TestEngineRunChainsReadAndGrepBuiltinTools(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeFile(t, root, "notes.txt", "alpha\nneedle\nomega\n")
+
+	cfg := config.DefaultConfig(root)
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-read", Name: "read_file", Input: json.RawMessage(`{"path":"notes.txt"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-grep", Name: "grep_search", Input: json.RawMessage(`{"pattern":"needle","path":"notes.txt","context_lines":1}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission:   permissions.NewStaticEngine(permissions.ModeWorkspaceWrite),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.ToolTrace) != 2 {
+		t.Fatalf("tool trace count = %d, want 2", len(sess.ToolTrace))
+	}
+	if !strings.Contains(sess.Messages[2].Content, `"name":"read_file"`) || !strings.Contains(sess.Messages[2].Content, `"bytes_read":19`) || !strings.Contains(sess.Messages[2].Content, `needle`) {
+		t.Fatalf("unexpected read_file message: %s", sess.Messages[2].Content)
+	}
+	if !strings.Contains(sess.Messages[4].Content, `"line":2`) || !strings.Contains(sess.Messages[4].Content, `"text":"needle"`) {
+		t.Fatalf("unexpected grep_search message: %s", sess.Messages[4].Content)
+	}
+}
+
+func TestEngineRunPersistsTodoWriteSideEffect(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-todo", Name: "todo_write", Input: json.RawMessage(`{"todos":[{"content":"ship m4"},{"content":"run tests","done":true}]}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission:   permissions.NewStaticEngine(permissions.ModeWorkspaceWrite),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.Todos) != 2 || sess.Todos[1].Content != "run tests" || !sess.Todos[1].Done {
+		t.Fatalf("unexpected persisted todos: %#v", sess.Todos)
+	}
+}
+
+func TestEngineRunEditAndBashLoop(t *testing.T) {
+	root := t.TempDir()
+	writeRuntimeFile(t, root, "note.txt", "before\n")
+
+	cfg := config.DefaultConfig(root)
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	cfg.Permission.Mode = permissions.ModeDangerFull
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-edit", Name: "edit_file", Input: json.RawMessage(`{"path":"note.txt","old_string":"before","new_string":"after"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash", Name: "bash", Input: json.RawMessage(`{"command":"cat note.txt"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission:   permissions.NewStaticEngine(permissions.ModeDangerFull),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(root, "note.txt"))
+	if err != nil {
+		t.Fatalf("read edited file: %v", err)
+	}
+	if string(got) != "after\n" {
+		t.Fatalf("edited file = %q", string(got))
+	}
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if !strings.Contains(sess.Messages[4].Content, `"command":"cat note.txt"`) || !strings.Contains(sess.Messages[4].Content, `after`) {
+		t.Fatalf("unexpected bash message: %s", sess.Messages[4].Content)
 	}
 }
 
@@ -174,4 +327,15 @@ func (t stubTool) Spec() types.ToolSpec {
 
 func (t stubTool) Execute(_ context.Context, input json.RawMessage, _ tools.ToolEnv) (*types.ToolResult, error) {
 	return &types.ToolResult{ToolCallID: "call-1", Name: t.name, Output: append(json.RawMessage(nil), input...)}, nil
+}
+
+func writeRuntimeFile(t *testing.T, root string, relative string, contents string) {
+	t.Helper()
+	path := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
 }
