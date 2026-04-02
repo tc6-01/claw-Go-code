@@ -46,6 +46,8 @@ func BuiltinTools() []Tool {
 		newGrepSearchTool(),
 		newBashTool(),
 		newTodoWriteTool(),
+		newWebFetchTool(),
+		newWebSearchTool(),
 	}
 }
 

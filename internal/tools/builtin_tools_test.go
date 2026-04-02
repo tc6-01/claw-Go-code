@@ -15,7 +15,7 @@ import (
 func TestBuiltinToolsRegisterExpectedNames(t *testing.T) {
 	registry := NewRegistry(BuiltinTools())
 	got := SpecNames(registry.Specs())
-	want := []string{"bash", "edit_file", "glob_search", "grep_search", "read_file", "todo_write", "write_file"}
+	want := []string{"bash", "edit_file", "glob_search", "grep_search", "read_file", "todo_write", "web_fetch", "web_search", "write_file"}
 	if len(got) != len(want) {
 		t.Fatalf("len(specs) = %d, want %d", len(got), len(want))
 	}

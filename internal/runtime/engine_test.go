@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +292,74 @@ func TestEngineRunEditAndBashLoop(t *testing.T) {
 	}
 	if !strings.Contains(sess.Messages[4].Content, `"command":"cat note.txt"`) || !strings.Contains(sess.Messages[4].Content, `after`) {
 		t.Fatalf("unexpected bash message: %s", sess.Messages[4].Content)
+	}
+}
+
+func TestEngineRunWebSearchThenFetch(t *testing.T) {
+	var pageServer *httptest.Server
+	pageServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/search":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<html><body><a class="result__a" href="` + pageServer.URL + `/page">Example Page</a></body></html>`))
+		case "/page":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(`<html><head><title>Example Page</title></head><body><p>Hello from fetched page.</p></body></html>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer pageServer.Close()
+	t.Setenv("CLAW_WEB_SEARCH_BASE_URL", pageServer.URL+"/search")
+
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	cfg.Permission.Mode = permissions.ModeDangerFull
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-search", Name: "web_search", Input: json.RawMessage(`{"query":"example page","allowed_domains":["` + pageServer.URL + `"]}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-fetch", Name: "web_fetch", Input: json.RawMessage(`{"url":"` + pageServer.URL + `/page","prompt":"Summarize this page"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission:   permissions.NewStaticEngine(permissions.ModeDangerFull),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.ToolTrace) != 2 {
+		t.Fatalf("tool trace count = %d, want 2", len(sess.ToolTrace))
+	}
+	if !strings.Contains(sess.Messages[2].Content, `"tool_use_id":"web_search_1"`) || !strings.Contains(sess.Messages[2].Content, `Example Page`) {
+		t.Fatalf("unexpected web_search message: %s", sess.Messages[2].Content)
+	}
+	if !strings.Contains(sess.Messages[4].Content, `Fetched`) || !strings.Contains(sess.Messages[4].Content, `Hello from fetched page`) {
+		t.Fatalf("unexpected web_fetch message: %s", sess.Messages[4].Content)
 	}
 }
 
