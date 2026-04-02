@@ -18,6 +18,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	if handled, err := handlePermissionRuleCommand(cfg, os.Args[1:], os.Stdout); handled {
+		if err != nil {
+			log.Fatalf("permissions rules: %v", err)
+		}
+		return
+	}
 
 	if cfg.CLI.Interactive && isTerminal(os.Stdin) && isTerminal(os.Stdout) {
 		application, err := app.NewWithOptions(cfg, app.Options{

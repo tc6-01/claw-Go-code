@@ -34,9 +34,11 @@ type StaticEngine struct {
 }
 
 type permissionCacheKey struct {
-	ToolName    string
-	CurrentMode Mode
-	Required    Mode
+	ToolName      string
+	CurrentMode   Mode
+	Required      Mode
+	TargetKind    RuleTargetKind
+	TargetPattern string
 }
 
 type persistedRuleCache struct {
@@ -45,10 +47,12 @@ type persistedRuleCache struct {
 }
 
 type persistedRuleEntry struct {
-	ToolName    string   `json:"tool_name"`
-	CurrentMode Mode     `json:"current_mode"`
-	Required    Mode     `json:"required"`
-	Decision    Decision `json:"decision"`
+	ToolName      string         `json:"tool_name"`
+	CurrentMode   Mode           `json:"current_mode"`
+	Required      Mode           `json:"required"`
+	TargetKind    RuleTargetKind `json:"target_kind,omitempty"`
+	TargetPattern string         `json:"target_pattern,omitempty"`
+	Decision      Decision       `json:"decision"`
 }
 
 func NewStaticEngine(defaultMode Mode) *StaticEngine {
@@ -202,10 +206,13 @@ func (e *StaticEngine) ensureRuleDecisionsLoaded() error {
 }
 
 func cacheKey(req PermissionRequest) permissionCacheKey {
+	matcher := req.Matcher()
 	return permissionCacheKey{
-		ToolName:    req.ToolName,
-		CurrentMode: req.CurrentMode,
-		Required:    req.Required,
+		ToolName:      matcher.ToolName,
+		CurrentMode:   matcher.CurrentMode,
+		Required:      matcher.Required,
+		TargetKind:    matcher.TargetKind,
+		TargetPattern: matcher.TargetPattern,
 	}
 }
 
@@ -230,9 +237,11 @@ func loadRuleDecisionFile(path string) (map[permissionCacheKey]Decision, error) 
 		switch entry.Decision {
 		case DecisionAllow, DecisionDeny:
 			decisions[permissionCacheKey{
-				ToolName:    entry.ToolName,
-				CurrentMode: entry.CurrentMode,
-				Required:    entry.Required,
+				ToolName:      entry.ToolName,
+				CurrentMode:   entry.CurrentMode,
+				Required:      entry.Required,
+				TargetKind:    entry.TargetKind,
+				TargetPattern: entry.TargetPattern,
 			}] = entry.Decision
 		}
 	}
@@ -250,10 +259,12 @@ func persistRuleDecisionFile(path string, decisions map[permissionCacheKey]Decis
 	entries := make([]persistedRuleEntry, 0, len(decisions))
 	for key, decision := range decisions {
 		entries = append(entries, persistedRuleEntry{
-			ToolName:    key.ToolName,
-			CurrentMode: key.CurrentMode,
-			Required:    key.Required,
-			Decision:    decision,
+			ToolName:      key.ToolName,
+			CurrentMode:   key.CurrentMode,
+			Required:      key.Required,
+			TargetKind:    key.TargetKind,
+			TargetPattern: key.TargetPattern,
+			Decision:      decision,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -265,6 +276,12 @@ func persistRuleDecisionFile(path string, decisions map[permissionCacheKey]Decis
 		}
 		if entries[i].Required != entries[j].Required {
 			return entries[i].Required < entries[j].Required
+		}
+		if entries[i].TargetKind != entries[j].TargetKind {
+			return entries[i].TargetKind < entries[j].TargetKind
+		}
+		if entries[i].TargetPattern != entries[j].TargetPattern {
+			return entries[i].TargetPattern < entries[j].TargetPattern
 		}
 		return entries[i].Decision < entries[j].Decision
 	})
@@ -283,4 +300,55 @@ func persistRuleDecisionFile(path string, decisions map[permissionCacheKey]Decis
 		return err
 	}
 	return os.Rename(tempPath, path)
+}
+
+func LoadRules(path string) ([]StoredRule, error) {
+	decisions, err := loadRuleDecisionFile(path)
+	if err != nil {
+		return nil, err
+	}
+	rules := make([]StoredRule, 0, len(decisions))
+	for key, decision := range decisions {
+		rules = append(rules, StoredRule{
+			Matcher: RuleMatcher{
+				ToolName:      key.ToolName,
+				CurrentMode:   key.CurrentMode,
+				Required:      key.Required,
+				TargetKind:    key.TargetKind,
+				TargetPattern: key.TargetPattern,
+			},
+			Decision: decision,
+		})
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		left := rules[i].Matcher
+		right := rules[j].Matcher
+		if left.ToolName != right.ToolName {
+			return left.ToolName < right.ToolName
+		}
+		if left.CurrentMode != right.CurrentMode {
+			return left.CurrentMode < right.CurrentMode
+		}
+		if left.Required != right.Required {
+			return left.Required < right.Required
+		}
+		if left.TargetKind != right.TargetKind {
+			return left.TargetKind < right.TargetKind
+		}
+		if left.TargetPattern != right.TargetPattern {
+			return left.TargetPattern < right.TargetPattern
+		}
+		return rules[i].Decision < rules[j].Decision
+	})
+	return rules, nil
+}
+
+func ClearRules(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

@@ -45,11 +45,12 @@ func (e *toolExecutor) Execute(ctx context.Context, req ExecuteRequest) (*Execut
 		StartedAt: startedAt,
 	}
 
-	decision, err := e.permission.Decide(ctx, permissions.PermissionRequest{
-		ToolName:    req.Call.Name,
-		CurrentMode: req.Env.Mode,
-		Required:    requiredMode(tool),
-	})
+	decision, err := e.permission.Decide(ctx, permissions.RequestForToolCall(
+		req.Call.Name,
+		req.Env.Mode,
+		requiredMode(tool),
+		req.Call.Input,
+	))
 	if err != nil {
 		trace.EndedAt = time.Now().UTC()
 		trace.Success = false
