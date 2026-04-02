@@ -363,6 +363,58 @@ func TestEngineRunWebSearchThenFetch(t *testing.T) {
 	}
 }
 
+func TestEngineRunPersistsPromptPermissionDecision(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	cfg.Permission.Mode = permissions.ModeWorkspaceWrite
+	cfg.Permission.EscalationPolicy = permissions.EscalationPrompt
+
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash", Name: "bash", Input: json.RawMessage(`{"command":"pwd"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission: permissions.NewStaticEngineWithOptions(permissions.Options{
+			DefaultMode:      permissions.ModeWorkspaceWrite,
+			EscalationPolicy: permissions.EscalationPrompt,
+		}),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.ToolTrace) != 1 {
+		t.Fatalf("tool trace count = %d, want 1", len(sess.ToolTrace))
+	}
+	if sess.ToolTrace[0].Permission != string(permissions.DecisionPrompt) {
+		t.Fatalf("unexpected permission decision: %#v", sess.ToolTrace[0])
+	}
+	if !strings.Contains(sess.Messages[2].Content, "needs confirmation") {
+		t.Fatalf("unexpected tool message: %s", sess.Messages[2].Content)
+	}
+}
+
 type scriptedProvider struct {
 	events [][]*sharedprovider.StreamEvent
 	index  int

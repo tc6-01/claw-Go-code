@@ -19,9 +19,12 @@ func DefaultConfig(workingDir string) Config {
 			Anthropic:       EndpointConfig{BaseURL: "https://api.anthropic.com"},
 			OpenAI:          EndpointConfig{BaseURL: "https://api.openai.com/v1"},
 		},
-		Session:    SessionConfig{StorageDir: storageDir},
-		Permission: PermissionConfig{Mode: permissions.ModeWorkspaceWrite},
-		Compact:    CompactConfig{Enabled: true},
-		CLI:        CLIConfig{Interactive: true},
+		Session: SessionConfig{StorageDir: storageDir},
+		Permission: PermissionConfig{
+			Mode:             permissions.ModeWorkspaceWrite,
+			EscalationPolicy: permissions.EscalationDeny,
+		},
+		Compact: CompactConfig{Enabled: true},
+		CLI:     CLIConfig{Interactive: true},
 	}
 }

@@ -127,6 +127,84 @@ func TestExecutorUsesBuiltinPermissionModes(t *testing.T) {
 	}
 }
 
+func TestExecutorAllowsReadOnlyBuiltinInReadOnlyMode(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, root, "notes.txt", "hello")
+
+	registry := NewRegistry(BuiltinTools())
+	executor := NewExecutor(registry, permissions.NewStaticEngine(permissions.ModeReadOnly))
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-read", Name: "read_file", Input: json.RawMessage(`{"path":"notes.txt"}`)},
+		Env:  ToolEnv{WorkingDir: root, Mode: permissions.ModeReadOnly},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !result.Trace.Success {
+		t.Fatalf("expected success, got trace %#v", result.Trace)
+	}
+	if !strings.Contains(result.Message.Content, `"content":"hello"`) {
+		t.Fatalf("unexpected read result: %s", result.Message.Content)
+	}
+}
+
+func TestExecutorDeniesWriteBuiltinInReadOnlyMode(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	executor := NewExecutor(registry, permissions.NewStaticEngine(permissions.ModeReadOnly))
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-write", Name: "write_file", Input: json.RawMessage(`{"path":"a.txt","content":"x"}`)},
+		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeReadOnly},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Trace.Success {
+		t.Fatal("expected denied write_file trace")
+	}
+	if !strings.Contains(result.Message.Content, "requires workspace-write") {
+		t.Fatalf("unexpected permission content: %s", result.Message.Content)
+	}
+}
+
+func TestExecutorAllowsWebToolInDangerFullMode(t *testing.T) {
+	registry := NewRegistry([]Tool{stubTool{
+		spec:   types.ToolSpec{Name: "web_fetch", Permission: string(permissions.ModeDangerFull)},
+		result: &types.ToolResult{Output: json.RawMessage(`{"result":"ok"}`)},
+	}})
+	executor := NewExecutor(registry, permissions.NewStaticEngine(permissions.ModeDangerFull))
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-web", Name: "web_fetch", Input: json.RawMessage(`{"url":"https://example.com"}`)},
+		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeDangerFull},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !result.Trace.Success {
+		t.Fatalf("expected web_fetch success, got %#v", result.Trace)
+	}
+}
+
+func TestExecutorReturnsPromptDecisionAsToolMessage(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	executor := NewExecutor(registry, permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      permissions.ModeWorkspaceWrite,
+		EscalationPolicy: permissions.EscalationPrompt,
+	}))
+	result, err := executor.Execute(context.Background(), ExecuteRequest{
+		Call: types.ToolCall{ID: "tool-bash-prompt", Name: "bash", Input: json.RawMessage(`{"command":"pwd"}`)},
+		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Trace.Permission != string(permissions.DecisionPrompt) {
+		t.Fatalf("unexpected permission decision: %#v", result.Trace)
+	}
+	if !strings.Contains(result.Message.Content, "needs confirmation") {
+		t.Fatalf("unexpected prompt content: %s", result.Message.Content)
+	}
+}
+
 func TestExecutorReturnsNotFoundError(t *testing.T) {
 	executor := NewExecutor(NewRegistry(nil), permissions.NewStaticEngine(permissions.ModeWorkspaceWrite))
 

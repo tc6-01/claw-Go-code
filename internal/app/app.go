@@ -31,7 +31,10 @@ func New(cfg config.Config) (*App, error) {
 		"noop":      provider.NoopProvider{},
 	})
 	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
-	permissionEngine := permissions.NewStaticEngine(cfg.Permission.Mode)
+	permissionEngine := permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      cfg.Permission.Mode,
+		EscalationPolicy: cfg.Permission.EscalationPolicy,
+	})
 	runtimeEngine := runtime.NewEngine(runtime.Dependencies{
 		Config:          cfg,
 		SessionStore:    sessionStore,

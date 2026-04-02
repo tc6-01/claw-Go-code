@@ -28,7 +28,8 @@ type SessionConfig struct {
 }
 
 type PermissionConfig struct {
-	Mode permissions.Mode
+	Mode             permissions.Mode
+	EscalationPolicy permissions.EscalationPolicy
 }
 
 type CompactConfig struct {

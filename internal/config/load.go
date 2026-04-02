@@ -2,7 +2,9 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"claude-go-code/internal/permissions"
 )
@@ -33,6 +35,24 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 		}
 		cfg.Permission.Mode = mode
 	}
+	if v := os.Getenv("CLAW_PERMISSION_ESCALATION_POLICY"); v != "" {
+		policy, err := parseEscalationPolicy(v)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.Permission.EscalationPolicy = policy
+	}
 
 	return cfg, nil
+}
+
+func parseEscalationPolicy(v string) (permissions.EscalationPolicy, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", string(permissions.EscalationDeny):
+		return permissions.EscalationDeny, nil
+	case string(permissions.EscalationPrompt):
+		return permissions.EscalationPrompt, nil
+	default:
+		return "", fmt.Errorf("unknown escalation policy: %s", v)
+	}
 }

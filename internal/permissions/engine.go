@@ -9,12 +9,25 @@ type Engine interface {
 	Decide(ctx context.Context, req PermissionRequest) (*PermissionDecision, error)
 }
 
+type Options struct {
+	DefaultMode      Mode
+	EscalationPolicy EscalationPolicy
+}
+
 type StaticEngine struct {
-	defaultMode Mode
+	defaultMode      Mode
+	escalationPolicy EscalationPolicy
 }
 
 func NewStaticEngine(defaultMode Mode) *StaticEngine {
-	return &StaticEngine{defaultMode: defaultMode}
+	return NewStaticEngineWithOptions(Options{DefaultMode: defaultMode})
+}
+
+func NewStaticEngineWithOptions(opts Options) *StaticEngine {
+	return &StaticEngine{
+		defaultMode:      opts.DefaultMode,
+		escalationPolicy: normalizeEscalationPolicy(opts.EscalationPolicy),
+	}
 }
 
 func (e *StaticEngine) Decide(_ context.Context, req PermissionRequest) (*PermissionDecision, error) {
@@ -27,6 +40,12 @@ func (e *StaticEngine) Decide(_ context.Context, req PermissionRequest) (*Permis
 	}
 	if rank(current) >= rank(req.Required) {
 		return &PermissionDecision{Decision: DecisionAllow}, nil
+	}
+	if e.escalationPolicy == EscalationPrompt {
+		return &PermissionDecision{
+			Decision: DecisionPrompt,
+			Reason:   fmt.Sprintf("tool %s requires %s and needs confirmation from %s mode", req.ToolName, req.Required, current),
+		}, nil
 	}
 	return &PermissionDecision{
 		Decision: DecisionDeny,
