@@ -10,6 +10,7 @@ import (
 func TestLoadReadsPermissionEscalationPolicy(t *testing.T) {
 	t.Setenv("CLAW_PERMISSION_MODE", string(permissions.ModeReadOnly))
 	t.Setenv("CLAW_PERMISSION_ESCALATION_POLICY", string(permissions.EscalationPrompt))
+	t.Setenv("CLAW_PERMISSION_RULES_PATH", "/tmp/claw-rules.json")
 
 	cfg, err := Load(context.Background(), LoadOptions{WorkingDir: t.TempDir()})
 	if err != nil {
@@ -20,6 +21,9 @@ func TestLoadReadsPermissionEscalationPolicy(t *testing.T) {
 	}
 	if cfg.Permission.EscalationPolicy != permissions.EscalationPrompt {
 		t.Fatalf("escalation policy = %q", cfg.Permission.EscalationPolicy)
+	}
+	if cfg.Permission.RulesPath != "/tmp/claw-rules.json" {
+		t.Fatalf("rules path = %q", cfg.Permission.RulesPath)
 	}
 }
 

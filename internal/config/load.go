@@ -42,6 +42,9 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 		}
 		cfg.Permission.EscalationPolicy = policy
 	}
+	if v := os.Getenv("CLAW_PERMISSION_RULES_PATH"); v != "" {
+		cfg.Permission.RulesPath = v
+	}
 
 	return cfg, nil
 }

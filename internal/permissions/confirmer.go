@@ -7,6 +7,7 @@ type ConfirmationScope string
 const (
 	ConfirmationScopeOnce    ConfirmationScope = "once"
 	ConfirmationScopeSession ConfirmationScope = "session"
+	ConfirmationScopeRule    ConfirmationScope = "rule"
 )
 
 type ConfirmationOutcome struct {
@@ -30,7 +31,9 @@ func normalizeConfirmationOutcome(outcome ConfirmationOutcome) ConfirmationOutco
 	default:
 		outcome.Decision = DecisionDeny
 	}
-	if outcome.Scope != ConfirmationScopeSession {
+	switch outcome.Scope {
+	case ConfirmationScopeSession, ConfirmationScopeRule:
+	default:
 		outcome.Scope = ConfirmationScopeOnce
 	}
 	return outcome

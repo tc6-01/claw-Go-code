@@ -43,6 +43,7 @@ func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 		DefaultMode:      cfg.Permission.Mode,
 		EscalationPolicy: cfg.Permission.EscalationPolicy,
 		Confirmer:        opts.PermissionConfirmer,
+		RuleCachePath:    cfg.Permission.RulesPath,
 	})
 	runtimeEngine := runtime.NewEngine(runtime.Dependencies{
 		Config:          cfg,

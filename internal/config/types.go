@@ -30,6 +30,7 @@ type SessionConfig struct {
 type PermissionConfig struct {
 	Mode             permissions.Mode
 	EscalationPolicy permissions.EscalationPolicy
+	RulesPath        string
 }
 
 type CompactConfig struct {

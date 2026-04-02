@@ -83,3 +83,39 @@ func TestTerminalConfirmerDeniesSession(t *testing.T) {
 		t.Fatalf("unexpected session-deny outcome: %#v", outcome)
 	}
 }
+
+func TestTerminalConfirmerAllowsRule(t *testing.T) {
+	in := strings.NewReader("r\n")
+	var out bytes.Buffer
+	confirmer := newTerminalConfirmer(in, &out)
+
+	outcome, err := confirmer.Confirm(context.Background(), permissions.PermissionRequest{
+		ToolName:    "bash",
+		CurrentMode: permissions.ModeWorkspaceWrite,
+		Required:    permissions.ModeDangerFull,
+	})
+	if err != nil {
+		t.Fatalf("Confirm() error = %v", err)
+	}
+	if outcome.Decision != permissions.DecisionAllow || outcome.Scope != permissions.ConfirmationScopeRule {
+		t.Fatalf("unexpected rule-allow outcome: %#v", outcome)
+	}
+}
+
+func TestTerminalConfirmerDeniesRule(t *testing.T) {
+	in := strings.NewReader("b\n")
+	var out bytes.Buffer
+	confirmer := newTerminalConfirmer(in, &out)
+
+	outcome, err := confirmer.Confirm(context.Background(), permissions.PermissionRequest{
+		ToolName:    "web_fetch",
+		CurrentMode: permissions.ModeWorkspaceWrite,
+		Required:    permissions.ModeDangerFull,
+	})
+	if err != nil {
+		t.Fatalf("Confirm() error = %v", err)
+	}
+	if outcome.Decision != permissions.DecisionDeny || outcome.Scope != permissions.ConfirmationScopeRule {
+		t.Fatalf("unexpected rule-deny outcome: %#v", outcome)
+	}
+}

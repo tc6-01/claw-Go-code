@@ -10,6 +10,7 @@ import (
 func DefaultConfig(workingDir string) Config {
 	homeDir, _ := os.UserHomeDir()
 	storageDir := filepath.Join(homeDir, ".claude-go-code", "sessions")
+	rulesPath := filepath.Join(homeDir, ".claude-go-code", "permissions", "rules.json")
 
 	return Config{
 		WorkingDir: workingDir,
@@ -23,6 +24,7 @@ func DefaultConfig(workingDir string) Config {
 		Permission: PermissionConfig{
 			Mode:             permissions.ModeWorkspaceWrite,
 			EscalationPolicy: permissions.EscalationDeny,
+			RulesPath:        rulesPath,
 		},
 		Compact: CompactConfig{Enabled: true},
 		CLI:     CLIConfig{Interactive: true},

@@ -13,7 +13,7 @@ import (
 
 func newTerminalConfirmer(in io.Reader, out io.Writer) permissions.Confirmer {
 	return permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
-		if _, err := fmt.Fprintf(out, "Allow tool %s? current=%s required=%s [y]es/[a]llow session/[n]o/[d]eny session: ", req.ToolName, req.CurrentMode, req.Required); err != nil {
+		if _, err := fmt.Fprintf(out, "Allow tool %s? current=%s required=%s [y]es/[a]llow session/[r]ule allow/[n]o/[d]eny session/[b]lock rule: ", req.ToolName, req.CurrentMode, req.Required); err != nil {
 			return permissions.ConfirmationOutcome{}, err
 		}
 		reader := bufio.NewReader(in)
@@ -26,8 +26,12 @@ func newTerminalConfirmer(in io.Reader, out io.Writer) permissions.Confirmer {
 			return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeOnce}, nil
 		case "a", "always":
 			return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeSession}, nil
+		case "r", "rule", "allow-rule", "remember":
+			return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeRule}, nil
 		case "d", "deny-session", "never":
 			return permissions.ConfirmationOutcome{Decision: permissions.DecisionDeny, Scope: permissions.ConfirmationScopeSession}, nil
+		case "b", "block-rule", "deny-rule":
+			return permissions.ConfirmationOutcome{Decision: permissions.DecisionDeny, Scope: permissions.ConfirmationScopeRule}, nil
 		default:
 			return permissions.ConfirmationOutcome{Decision: permissions.DecisionDeny, Scope: permissions.ConfirmationScopeOnce}, nil
 		}
