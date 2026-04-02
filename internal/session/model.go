@@ -69,8 +69,61 @@ func cloneSession(in *types.Session) *types.Session {
 		return nil
 	}
 	copyValue := *in
-	copyValue.Messages = append([]types.Message(nil), in.Messages...)
-	copyValue.ToolTrace = append([]types.ToolTraceEntry(nil), in.ToolTrace...)
+	copyValue.Messages = cloneMessages(in.Messages)
+	copyValue.ToolTrace = cloneToolTrace(in.ToolTrace)
+	copyValue.Usage = append([]types.Usage(nil), in.Usage...)
 	copyValue.Todos = append([]types.TodoItem(nil), in.Todos...)
 	return &copyValue
+}
+
+func cloneMessages(in []types.Message) []types.Message {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]types.Message, len(in))
+	for i := range in {
+		out[i] = in[i]
+		if in[i].Metadata != nil {
+			out[i].Metadata = make(map[string]string, len(in[i].Metadata))
+			for k, v := range in[i].Metadata {
+				out[i].Metadata[k] = v
+			}
+		}
+		out[i].ToolCalls = cloneToolCalls(in[i].ToolCalls)
+		out[i].ToolResult = cloneToolResult(in[i].ToolResult)
+	}
+	return out
+}
+
+func cloneToolTrace(in []types.ToolTraceEntry) []types.ToolTraceEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]types.ToolTraceEntry, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].Result = cloneToolResult(in[i].Result)
+	}
+	return out
+}
+
+func cloneToolCalls(in []types.ToolCall) []types.ToolCall {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]types.ToolCall, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].Input = append([]byte(nil), in[i].Input...)
+	}
+	return out
+}
+
+func cloneToolResult(in *types.ToolResult) *types.ToolResult {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Output = append([]byte(nil), in.Output...)
+	return &out
 }

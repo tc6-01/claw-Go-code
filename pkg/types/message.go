@@ -18,12 +18,16 @@ const (
 )
 
 type Message struct {
-	ID        string            `json:"id,omitempty"`
-	Role      Role              `json:"role"`
-	Name      string            `json:"name,omitempty"`
-	Content   string            `json:"content"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-	CreatedAt time.Time         `json:"created_at,omitempty"`
+	ID         string            `json:"id,omitempty"`
+	Role       Role              `json:"role"`
+	Name       string            `json:"name,omitempty"`
+	Content    string            `json:"content"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	CreatedAt  time.Time         `json:"created_at,omitempty"`
+	StopReason string            `json:"stop_reason,omitempty"`
+	Usage      Usage             `json:"usage,omitempty"`
+	ToolCalls  []ToolCall        `json:"tool_calls,omitempty"`
+	ToolResult *ToolResult       `json:"tool_result,omitempty"`
 }
 
 type MessageRequest struct {

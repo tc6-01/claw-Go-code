@@ -29,11 +29,17 @@ func TestNewBuildsRunnableApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load session: %v", err)
 	}
-	if len(sess.Messages) != 1 {
-		t.Fatalf("message count = %d, want 1", len(sess.Messages))
+	if len(sess.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(sess.Messages))
 	}
-	if !strings.Contains(sess.Messages[0].Content, "anthropic stub response:") {
-		t.Fatalf("unexpected default provider response %q", sess.Messages[0].Content)
+	if sess.Messages[0].Role != "user" {
+		t.Fatalf("unexpected bootstrap role %q", sess.Messages[0].Role)
+	}
+	if !strings.Contains(sess.Messages[1].Content, "anthropic stub response:") {
+		t.Fatalf("unexpected default provider response %q", sess.Messages[1].Content)
+	}
+	if sess.Messages[1].Usage.TotalTokens == 0 {
+		t.Fatal("expected persisted usage on assistant message")
 	}
 }
 
@@ -54,10 +60,16 @@ func TestNewUsesConfiguredOpenAIProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load session: %v", err)
 	}
-	if len(sess.Messages) != 1 {
-		t.Fatalf("message count = %d, want 1", len(sess.Messages))
+	if len(sess.Messages) != 2 {
+		t.Fatalf("message count = %d, want 2", len(sess.Messages))
 	}
-	if !strings.Contains(sess.Messages[0].Content, "openai stub response:") {
-		t.Fatalf("unexpected openai provider response %q", sess.Messages[0].Content)
+	if sess.Messages[0].Role != "user" {
+		t.Fatalf("unexpected bootstrap role %q", sess.Messages[0].Role)
+	}
+	if !strings.Contains(sess.Messages[1].Content, "openai stub response:") {
+		t.Fatalf("unexpected openai provider response %q", sess.Messages[1].Content)
+	}
+	if sess.Messages[1].Usage.TotalTokens == 0 {
+		t.Fatal("expected persisted usage on assistant message")
 	}
 }

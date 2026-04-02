@@ -25,6 +25,10 @@ func NewRegistry(initial []Tool) *MapRegistry {
 }
 
 func (r *MapRegistry) Register(tool Tool) error {
+	if err := RequireTool(tool); err != nil {
+		return err
+	}
+
 	spec := tool.Spec()
 	if spec.Name == "" {
 		return fmt.Errorf("tool name is required")

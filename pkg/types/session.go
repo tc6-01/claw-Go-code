@@ -14,6 +14,7 @@ type Session struct {
 	PermissionMode string           `json:"permission_mode"`
 	Messages       []Message        `json:"messages,omitempty"`
 	ToolTrace      []ToolTraceEntry `json:"tool_trace,omitempty"`
+	Usage          []Usage          `json:"usage,omitempty"`
 	Todos          []TodoItem       `json:"todos,omitempty"`
 }
 
@@ -26,10 +27,16 @@ type SessionSummary struct {
 }
 
 type ToolTraceEntry struct {
-	Name      string    `json:"name"`
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at"`
-	Success   bool      `json:"success"`
+	ID         string      `json:"id,omitempty"`
+	Name       string      `json:"name"`
+	Input      string      `json:"input,omitempty"`
+	Output     string      `json:"output,omitempty"`
+	Error      string      `json:"error,omitempty"`
+	StartedAt  time.Time   `json:"started_at"`
+	EndedAt    time.Time   `json:"ended_at"`
+	Success    bool        `json:"success"`
+	Permission string      `json:"permission,omitempty"`
+	Result     *ToolResult `json:"result,omitempty"`
 }
 
 type TodoItem struct {
