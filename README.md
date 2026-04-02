@@ -58,6 +58,18 @@ List persisted rules:
 go run ./cmd/claw permissions rules list
 ```
 
+List persisted rules as JSON:
+
+```bash
+go run ./cmd/claw permissions rules list --json
+```
+
+Remove one persisted rule by index:
+
+```bash
+go run ./cmd/claw permissions rules remove 1
+```
+
 Clear persisted rules:
 
 ```bash

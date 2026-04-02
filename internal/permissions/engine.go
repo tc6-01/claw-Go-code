@@ -343,6 +343,20 @@ func LoadRules(path string) ([]StoredRule, error) {
 	return rules, nil
 }
 
+func SaveRules(path string, rules []StoredRule) error {
+	decisions := make(map[permissionCacheKey]Decision, len(rules))
+	for _, rule := range rules {
+		decisions[permissionCacheKey{
+			ToolName:      rule.Matcher.ToolName,
+			CurrentMode:   rule.Matcher.CurrentMode,
+			Required:      rule.Matcher.Required,
+			TargetKind:    rule.Matcher.TargetKind,
+			TargetPattern: rule.Matcher.TargetPattern,
+		}] = rule.Decision
+	}
+	return persistRuleDecisionFile(path, decisions)
+}
+
 func ClearRules(path string) error {
 	if path == "" {
 		return nil
