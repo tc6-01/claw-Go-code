@@ -445,11 +445,11 @@ func TestEngineRunExecutesToolAfterConfirmation(t *testing.T) {
 		Permission: permissions.NewStaticEngineWithOptions(permissions.Options{
 			DefaultMode:      permissions.ModeWorkspaceWrite,
 			EscalationPolicy: permissions.EscalationPrompt,
-			Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (bool, error) {
+			Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
 				if req.ToolName != "bash" {
 					t.Fatalf("unexpected permission request: %#v", req)
 				}
-				return true, nil
+				return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeOnce}, nil
 			}),
 		}),
 	})
@@ -467,6 +467,133 @@ func TestEngineRunExecutesToolAfterConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(sess.Messages[2].Content, "approved") {
 		t.Fatalf("unexpected bash tool message: %s", sess.Messages[2].Content)
+	}
+}
+
+func TestEngineRunReusesSessionApprovalForRepeatedTool(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	cfg.Permission.Mode = permissions.ModeWorkspaceWrite
+	cfg.Permission.EscalationPolicy = permissions.EscalationPrompt
+
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash-1", Name: "bash", Input: json.RawMessage(`{"command":"printf first"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash-2", Name: "bash", Input: json.RawMessage(`{"command":"printf second"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	confirmCalls := 0
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission: permissions.NewStaticEngineWithOptions(permissions.Options{
+			DefaultMode:      permissions.ModeWorkspaceWrite,
+			EscalationPolicy: permissions.EscalationPrompt,
+			Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
+				confirmCalls++
+				if req.ToolName != "bash" {
+					t.Fatalf("unexpected permission request: %#v", req)
+				}
+				return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeSession}, nil
+			}),
+		}),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.ToolTrace) != 2 || !sess.ToolTrace[0].Success || !sess.ToolTrace[1].Success {
+		t.Fatalf("unexpected tool traces: %#v", sess.ToolTrace)
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("confirmCalls = %d, want 1", confirmCalls)
+	}
+}
+
+func TestEngineRunReusesSessionDenialForRepeatedTool(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+	cfg.Permission.Mode = permissions.ModeWorkspaceWrite
+	cfg.Permission.EscalationPolicy = permissions.EscalationPrompt
+
+	store := session.NewInMemoryStore()
+	scripted := &scriptedProvider{events: [][]*sharedprovider.StreamEvent{
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash-deny-1", Name: "bash", Input: json.RawMessage(`{"command":"printf first"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.ToolCallEvent(&types.ToolCall{ID: "call-bash-deny-2", Name: "bash", Input: json.RawMessage(`{"command":"printf second"}`)}),
+			sharedprovider.StopEvent(),
+		},
+		{
+			sharedprovider.MessageStartEvent(),
+			sharedprovider.MessageDeltaEvent("done"),
+			sharedprovider.StopEvent(),
+		},
+	}}
+	confirmCalls := 0
+	engine := NewEngine(Dependencies{
+		Config:       cfg,
+		SessionStore: store,
+		ProviderFactory: sharedprovider.NewFactory("noop", map[string]sharedprovider.Provider{
+			"noop": scripted,
+		}),
+		ToolRegistry: tools.NewRegistry(tools.BuiltinTools()),
+		Permission: permissions.NewStaticEngineWithOptions(permissions.Options{
+			DefaultMode:      permissions.ModeWorkspaceWrite,
+			EscalationPolicy: permissions.EscalationPrompt,
+			Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
+				confirmCalls++
+				if req.ToolName != "bash" {
+					t.Fatalf("unexpected permission request: %#v", req)
+				}
+				return permissions.ConfirmationOutcome{Decision: permissions.DecisionDeny, Scope: permissions.ConfirmationScopeSession}, nil
+			}),
+		}),
+	})
+
+	if err := engine.Run(context.Background(), Invocation{Args: []string{"status"}}); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+
+	sess, err := store.Load(context.Background(), "bootstrap-session")
+	if err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if len(sess.ToolTrace) != 2 || sess.ToolTrace[0].Success || sess.ToolTrace[1].Success {
+		t.Fatalf("unexpected tool traces: %#v", sess.ToolTrace)
+	}
+	if !strings.Contains(sess.Messages[4].Content, "reuses deny decision cached") {
+		t.Fatalf("expected cached deny message, got %s", sess.Messages[4].Content)
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("confirmCalls = %d, want 1", confirmCalls)
 	}
 }
 

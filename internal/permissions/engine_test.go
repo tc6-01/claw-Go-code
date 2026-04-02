@@ -54,14 +54,16 @@ func TestStaticEnginePromptsWhenEscalationPolicyIsPrompt(t *testing.T) {
 }
 
 func TestStaticEngineUsesConfirmerToAllow(t *testing.T) {
+	callCount := 0
 	engine := NewStaticEngineWithOptions(Options{
 		DefaultMode:      ModeWorkspaceWrite,
 		EscalationPolicy: EscalationPrompt,
-		Confirmer: ConfirmFunc(func(_ context.Context, req PermissionRequest) (bool, error) {
+		Confirmer: ConfirmFunc(func(_ context.Context, req PermissionRequest) (ConfirmationOutcome, error) {
+			callCount++
 			if req.ToolName != "bash" || req.Required != ModeDangerFull {
 				t.Fatalf("unexpected request: %#v", req)
 			}
-			return true, nil
+			return ConfirmationOutcome{Decision: DecisionAllow, Scope: ConfirmationScopeOnce}, nil
 		}),
 	})
 	decision, err := engine.Decide(context.Background(), PermissionRequest{
@@ -75,14 +77,17 @@ func TestStaticEngineUsesConfirmerToAllow(t *testing.T) {
 	if decision == nil || decision.Decision != DecisionAllow {
 		t.Fatalf("unexpected decision: %#v", decision)
 	}
+	if callCount != 1 {
+		t.Fatalf("call count = %d, want 1", callCount)
+	}
 }
 
 func TestStaticEngineUsesConfirmerToDeny(t *testing.T) {
 	engine := NewStaticEngineWithOptions(Options{
 		DefaultMode:      ModeWorkspaceWrite,
 		EscalationPolicy: EscalationPrompt,
-		Confirmer: ConfirmFunc(func(_ context.Context, _ PermissionRequest) (bool, error) {
-			return false, nil
+		Confirmer: ConfirmFunc(func(_ context.Context, _ PermissionRequest) (ConfirmationOutcome, error) {
+			return ConfirmationOutcome{Decision: DecisionDeny, Scope: ConfirmationScopeOnce}, nil
 		}),
 	})
 	decision, err := engine.Decide(context.Background(), PermissionRequest{
@@ -95,5 +100,55 @@ func TestStaticEngineUsesConfirmerToDeny(t *testing.T) {
 	}
 	if decision == nil || decision.Decision != DecisionDeny {
 		t.Fatalf("unexpected decision: %#v", decision)
+	}
+}
+
+func TestStaticEngineCachesSessionAllowDecision(t *testing.T) {
+	callCount := 0
+	engine := NewStaticEngineWithOptions(Options{
+		DefaultMode:      ModeWorkspaceWrite,
+		EscalationPolicy: EscalationPrompt,
+		Confirmer: ConfirmFunc(func(_ context.Context, _ PermissionRequest) (ConfirmationOutcome, error) {
+			callCount++
+			return ConfirmationOutcome{Decision: DecisionAllow, Scope: ConfirmationScopeSession}, nil
+		}),
+	})
+	req := PermissionRequest{ToolName: "bash", CurrentMode: ModeWorkspaceWrite, Required: ModeDangerFull}
+	for i := 0; i < 2; i++ {
+		decision, err := engine.Decide(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Decide() error = %v", err)
+		}
+		if decision == nil || decision.Decision != DecisionAllow {
+			t.Fatalf("unexpected decision on pass %d: %#v", i, decision)
+		}
+	}
+	if callCount != 1 {
+		t.Fatalf("call count = %d, want 1", callCount)
+	}
+}
+
+func TestStaticEngineCachesSessionDenyDecision(t *testing.T) {
+	callCount := 0
+	engine := NewStaticEngineWithOptions(Options{
+		DefaultMode:      ModeWorkspaceWrite,
+		EscalationPolicy: EscalationPrompt,
+		Confirmer: ConfirmFunc(func(_ context.Context, _ PermissionRequest) (ConfirmationOutcome, error) {
+			callCount++
+			return ConfirmationOutcome{Decision: DecisionDeny, Scope: ConfirmationScopeSession}, nil
+		}),
+	})
+	req := PermissionRequest{ToolName: "bash", CurrentMode: ModeWorkspaceWrite, Required: ModeDangerFull}
+	for i := 0; i < 2; i++ {
+		decision, err := engine.Decide(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Decide() error = %v", err)
+		}
+		if decision == nil || decision.Decision != DecisionDeny {
+			t.Fatalf("unexpected decision on pass %d: %#v", i, decision)
+		}
+	}
+	if callCount != 1 {
+		t.Fatalf("call count = %d, want 1", callCount)
 	}
 }

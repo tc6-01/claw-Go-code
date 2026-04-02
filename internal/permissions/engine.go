@@ -3,6 +3,7 @@ package permissions
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 type Engine interface {
@@ -19,6 +20,14 @@ type StaticEngine struct {
 	defaultMode      Mode
 	escalationPolicy EscalationPolicy
 	confirmer        Confirmer
+	mu               sync.RWMutex
+	sessionDecisions map[permissionCacheKey]Decision
+}
+
+type permissionCacheKey struct {
+	ToolName    string
+	CurrentMode Mode
+	Required    Mode
 }
 
 func NewStaticEngine(defaultMode Mode) *StaticEngine {
@@ -30,6 +39,7 @@ func NewStaticEngineWithOptions(opts Options) *StaticEngine {
 		defaultMode:      opts.DefaultMode,
 		escalationPolicy: normalizeEscalationPolicy(opts.EscalationPolicy),
 		confirmer:        opts.Confirmer,
+		sessionDecisions: make(map[permissionCacheKey]Decision),
 	}
 }
 
@@ -41,24 +51,35 @@ func (e *StaticEngine) Decide(ctx context.Context, req PermissionRequest) (*Perm
 	if current == "" {
 		current = ModeWorkspaceWrite
 	}
+	req.CurrentMode = current
 	if rank(current) >= rank(req.Required) {
 		return &PermissionDecision{Decision: DecisionAllow}, nil
 	}
+	if cached, ok := e.lookupSessionDecision(req); ok {
+		return &PermissionDecision{
+			Decision: cached,
+			Reason:   fmt.Sprintf("tool %s reuses %s decision cached for this session", req.ToolName, cached),
+		}, nil
+	}
 	if e.escalationPolicy == EscalationPrompt {
 		if e.confirmer != nil {
-			allowed, err := e.confirmer.Confirm(ctx, req)
+			outcome, err := e.confirmer.Confirm(ctx, req)
 			if err != nil {
 				return nil, err
 			}
-			if allowed {
+			outcome = normalizeConfirmationOutcome(outcome)
+			if outcome.Scope == ConfirmationScopeSession {
+				e.storeSessionDecision(req, outcome.Decision)
+			}
+			if outcome.Decision == DecisionAllow {
 				return &PermissionDecision{
 					Decision: DecisionAllow,
-					Reason:   fmt.Sprintf("tool %s confirmed for %s from %s mode", req.ToolName, req.Required, current),
+					Reason:   fmt.Sprintf("tool %s confirmed for %s from %s mode (%s)", req.ToolName, req.Required, current, outcome.Scope),
 				}, nil
 			}
 			return &PermissionDecision{
 				Decision: DecisionDeny,
-				Reason:   fmt.Sprintf("tool %s was denied during confirmation from %s mode", req.ToolName, current),
+				Reason:   fmt.Sprintf("tool %s was denied during confirmation from %s mode (%s)", req.ToolName, current, outcome.Scope),
 			}, nil
 		}
 		return &PermissionDecision{
@@ -83,4 +104,25 @@ func rank(mode Mode) int {
 	default:
 		return 0
 	}
+}
+
+func (e *StaticEngine) lookupSessionDecision(req PermissionRequest) (Decision, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	decision, ok := e.sessionDecisions[permissionCacheKey{
+		ToolName:    req.ToolName,
+		CurrentMode: req.CurrentMode,
+		Required:    req.Required,
+	}]
+	return decision, ok
+}
+
+func (e *StaticEngine) storeSessionDecision(req PermissionRequest, decision Decision) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.sessionDecisions[permissionCacheKey{
+		ToolName:    req.ToolName,
+		CurrentMode: req.CurrentMode,
+		Required:    req.Required,
+	}] = decision
 }

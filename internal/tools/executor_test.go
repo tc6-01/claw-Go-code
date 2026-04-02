@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -210,11 +211,11 @@ func TestExecutorRunsToolAfterConfirmation(t *testing.T) {
 	executor := NewExecutor(registry, permissions.NewStaticEngineWithOptions(permissions.Options{
 		DefaultMode:      permissions.ModeWorkspaceWrite,
 		EscalationPolicy: permissions.EscalationPrompt,
-		Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (bool, error) {
+		Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
 			if req.ToolName != "bash" {
 				t.Fatalf("unexpected tool request: %#v", req)
 			}
-			return true, nil
+			return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeOnce}, nil
 		}),
 	}))
 
@@ -230,6 +231,73 @@ func TestExecutorRunsToolAfterConfirmation(t *testing.T) {
 	}
 	if !strings.Contains(result.Message.Content, "confirmed") {
 		t.Fatalf("unexpected bash output: %s", result.Message.Content)
+	}
+}
+
+func TestExecutorReusesSessionApprovalAcrossCalls(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	confirmCalls := 0
+	executor := NewExecutor(registry, permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      permissions.ModeWorkspaceWrite,
+		EscalationPolicy: permissions.EscalationPrompt,
+		Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
+			confirmCalls++
+			if req.ToolName != "bash" {
+				t.Fatalf("unexpected tool request: %#v", req)
+			}
+			return permissions.ConfirmationOutcome{Decision: permissions.DecisionAllow, Scope: permissions.ConfirmationScopeSession}, nil
+		}),
+	}))
+
+	for i := 0; i < 2; i++ {
+		result, err := executor.Execute(context.Background(), ExecuteRequest{
+			Call: types.ToolCall{ID: fmt.Sprintf("tool-bash-session-%d", i), Name: "bash", Input: json.RawMessage(`{"command":"printf cached"}`)},
+			Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if !result.Trace.Success {
+			t.Fatalf("expected success on pass %d, got %#v", i, result.Trace)
+		}
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("confirmCalls = %d, want 1", confirmCalls)
+	}
+}
+
+func TestExecutorReusesSessionDenialAcrossCalls(t *testing.T) {
+	registry := NewRegistry(BuiltinTools())
+	confirmCalls := 0
+	executor := NewExecutor(registry, permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      permissions.ModeWorkspaceWrite,
+		EscalationPolicy: permissions.EscalationPrompt,
+		Confirmer: permissions.ConfirmFunc(func(_ context.Context, req permissions.PermissionRequest) (permissions.ConfirmationOutcome, error) {
+			confirmCalls++
+			if req.ToolName != "bash" {
+				t.Fatalf("unexpected tool request: %#v", req)
+			}
+			return permissions.ConfirmationOutcome{Decision: permissions.DecisionDeny, Scope: permissions.ConfirmationScopeSession}, nil
+		}),
+	}))
+
+	for i := 0; i < 2; i++ {
+		result, err := executor.Execute(context.Background(), ExecuteRequest{
+			Call: types.ToolCall{ID: fmt.Sprintf("tool-bash-session-deny-%d", i), Name: "bash", Input: json.RawMessage(`{"command":"printf blocked"}`)},
+			Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
+		})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if result.Trace.Success {
+			t.Fatalf("expected denied trace on pass %d, got %#v", i, result.Trace)
+		}
+		if result.Trace.Permission != string(permissions.DecisionDeny) {
+			t.Fatalf("unexpected permission decision on pass %d: %#v", i, result.Trace)
+		}
+	}
+	if confirmCalls != 1 {
+		t.Fatalf("confirmCalls = %d, want 1", confirmCalls)
 	}
 }
 
