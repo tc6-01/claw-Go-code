@@ -64,10 +64,29 @@ List persisted rules as JSON:
 go run ./cmd/claw permissions rules list --json
 ```
 
+Add a persisted rule manually:
+
+```bash
+go run ./cmd/claw permissions rules add \
+  --tool bash \
+  --current workspace-write \
+  --required danger-full-access \
+  --decision allow \
+  --command-prefix git
+```
+
 Remove one persisted rule by index:
 
 ```bash
 go run ./cmd/claw permissions rules remove 1
+```
+
+Remove persisted rules by matcher:
+
+```bash
+go run ./cmd/claw permissions rules remove \
+  --tool web_fetch \
+  --host example.com
 ```
 
 Clear persisted rules:

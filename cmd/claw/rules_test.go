@@ -181,3 +181,123 @@ func TestHandlePermissionRuleCommandRemove(t *testing.T) {
 		t.Fatalf("unexpected remove output: %s", out.String())
 	}
 }
+
+func TestHandlePermissionRuleCommandAdd(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
+
+	var out bytes.Buffer
+	handled, err := handlePermissionRuleCommand(cfg, []string{
+		"permissions", "rules", "add",
+		"--tool", "bash",
+		"--current", string(permissions.ModeWorkspaceWrite),
+		"--required", string(permissions.ModeDangerFull),
+		"--decision", string(permissions.DecisionAllow),
+		"--command-prefix", "git",
+	}, &out)
+	if err != nil {
+		t.Fatalf("handlePermissionRuleCommand() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("expected command to be handled")
+	}
+	rules, err := permissions.LoadRules(cfg.Permission.RulesPath)
+	if err != nil {
+		t.Fatalf("LoadRules() error = %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected one added rule, got %#v", rules)
+	}
+	if rules[0].Matcher.TargetKind != permissions.RuleTargetCommandPrefix || rules[0].Matcher.TargetPattern != "git" {
+		t.Fatalf("unexpected stored rule: %#v", rules[0])
+	}
+	if !strings.Contains(out.String(), "Added rule:") {
+		t.Fatalf("unexpected add output: %s", out.String())
+	}
+}
+
+func TestHandlePermissionRuleCommandAddUpdatesExistingRule(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
+
+	for _, decision := range []permissions.Decision{permissions.DecisionAllow, permissions.DecisionDeny} {
+		var out bytes.Buffer
+		handled, err := handlePermissionRuleCommand(cfg, []string{
+			"permissions", "rules", "add",
+			"--tool", "web_fetch",
+			"--current", string(permissions.ModeWorkspaceWrite),
+			"--required", string(permissions.ModeDangerFull),
+			"--decision", string(decision),
+			"--host", "example.com",
+		}, &out)
+		if err != nil {
+			t.Fatalf("handlePermissionRuleCommand() error = %v", err)
+		}
+		if !handled {
+			t.Fatal("expected command to be handled")
+		}
+	}
+
+	rules, err := permissions.LoadRules(cfg.Permission.RulesPath)
+	if err != nil {
+		t.Fatalf("LoadRules() error = %v", err)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected a single updated rule, got %#v", rules)
+	}
+	if rules[0].Decision != permissions.DecisionDeny {
+		t.Fatalf("expected updated rule decision to be deny, got %#v", rules[0])
+	}
+}
+
+func TestHandlePermissionRuleCommandRemoveByMatcher(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
+
+	for _, args := range [][]string{
+		{
+			"permissions", "rules", "add",
+			"--tool", "bash",
+			"--current", string(permissions.ModeWorkspaceWrite),
+			"--required", string(permissions.ModeDangerFull),
+			"--decision", string(permissions.DecisionAllow),
+			"--command-prefix", "git",
+		},
+		{
+			"permissions", "rules", "add",
+			"--tool", "web_fetch",
+			"--current", string(permissions.ModeWorkspaceWrite),
+			"--required", string(permissions.ModeDangerFull),
+			"--decision", string(permissions.DecisionDeny),
+			"--host", "example.com",
+		},
+	} {
+		var out bytes.Buffer
+		if _, err := handlePermissionRuleCommand(cfg, args, &out); err != nil {
+			t.Fatalf("seed rule command error = %v", err)
+		}
+	}
+
+	var out bytes.Buffer
+	handled, err := handlePermissionRuleCommand(cfg, []string{
+		"permissions", "rules", "remove",
+		"--tool", "web_fetch",
+		"--host", "example.com",
+	}, &out)
+	if err != nil {
+		t.Fatalf("handlePermissionRuleCommand() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("expected command to be handled")
+	}
+	rules, err := permissions.LoadRules(cfg.Permission.RulesPath)
+	if err != nil {
+		t.Fatalf("LoadRules() error = %v", err)
+	}
+	if len(rules) != 1 || rules[0].Matcher.ToolName != "bash" {
+		t.Fatalf("unexpected remaining rules: %#v", rules)
+	}
+	if !strings.Contains(out.String(), "Removed 1 rule(s) matching filter") {
+		t.Fatalf("unexpected remove output: %s", out.String())
+	}
+}
