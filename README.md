@@ -1,5 +1,9 @@
 # claw-Go-code
 
+<p align="center">
+  <img src="./claw-hero.jpeg" alt="Claw hero image" width="280">
+</p>
+
 `claw-Go-code` is a Go-based agent harness that experiments with a safer, more controllable, and more extensible execution loop for coding agents.
 
 It is intentionally positioned as a harness layer:
@@ -12,6 +16,69 @@ It is intentionally positioned as a harness layer:
 
 This repository is **not** a marker dump for leaked Claude Code source, and it should not be read that way.
 It is an independent harness-oriented implementation that explores how to build a stricter and more inspectable agent runtime in Go.
+
+## 30-Second Start
+
+```bash
+export ANTHROPIC_API_KEY=your_key_here
+go run ./cmd/claw status
+go run ./cmd/claw permissions rules list
+```
+
+If you want OpenAI instead:
+
+```bash
+export CLAW_PROVIDER=openai
+export OPENAI_API_KEY=your_key_here
+go run ./cmd/claw status
+```
+
+## Quick Start
+
+### 1. Prepare credentials
+
+By default the harness uses Anthropic.
+
+```bash
+export ANTHROPIC_API_KEY=your_key_here
+```
+
+If you want to use OpenAI instead:
+
+```bash
+export CLAW_PROVIDER=openai
+export OPENAI_API_KEY=your_key_here
+```
+
+### 2. Run a smoke test
+
+From the repository root:
+
+```bash
+go run ./cmd/claw status
+```
+
+That verifies the CLI boots, loads config, builds the runtime, and can complete a minimal request loop.
+
+### 3. Choose a permission posture
+
+The default mode is `workspace-write` with escalation denied.
+
+Examples:
+
+```bash
+export CLAW_PERMISSION_MODE=read-only
+export CLAW_PERMISSION_ESCALATION_POLICY=prompt
+```
+
+With `prompt`, the interactive CLI can approve once, approve for the session, deny once, deny for the session, or persist an allow/block rule.
+
+### 4. Inspect or manage saved rules
+
+```bash
+go run ./cmd/claw permissions rules list
+go run ./cmd/claw permissions rules list --json
+```
 
 ## What this project focuses on
 
