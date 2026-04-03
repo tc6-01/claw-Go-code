@@ -46,10 +46,17 @@ func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 		openaiClient = openaiprovider.NewHTTPClient(openaiCfg)
 	}
 
+	claudeCodeCfg := anthropicprovider.NewConfig(cfg.Provider.ClaudeCode)
+	var claudeCodeClient anthropicprovider.Client
+	if claudeCodeCfg.APIKey != "" {
+		claudeCodeClient = anthropicprovider.NewHTTPClient(claudeCodeCfg)
+	}
+
 	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
-		"anthropic": anthropicprovider.New(anthropicCfg, anthropicClient),
-		"openai":    openaiprovider.New(openaiCfg, openaiClient),
-		"noop":      provider.NoopProvider{},
+		"anthropic":   anthropicprovider.New(anthropicCfg, anthropicClient),
+		"openai":      openaiprovider.New(openaiCfg, openaiClient),
+		"claude-code": anthropicprovider.New(claudeCodeCfg, claudeCodeClient),
+		"noop":        provider.NoopProvider{},
 	})
 	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
 	permissionEngine := permissions.NewStaticEngineWithOptions(permissions.Options{
@@ -106,10 +113,17 @@ func NewForServer(cfg config.Config) (*App, error) {
 		openaiClient = openaiprovider.NewHTTPClient(openaiCfg)
 	}
 
+	claudeCodeCfg := anthropicprovider.NewConfig(cfg.Provider.ClaudeCode)
+	var claudeCodeClient anthropicprovider.Client
+	if claudeCodeCfg.APIKey != "" {
+		claudeCodeClient = anthropicprovider.NewHTTPClient(claudeCodeCfg)
+	}
+
 	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
-		"anthropic": anthropicprovider.New(anthropicCfg, anthropicClient),
-		"openai":    openaiprovider.New(openaiCfg, openaiClient),
-		"noop":      provider.NoopProvider{},
+		"anthropic":   anthropicprovider.New(anthropicCfg, anthropicClient),
+		"openai":      openaiprovider.New(openaiCfg, openaiClient),
+		"claude-code": anthropicprovider.New(claudeCodeCfg, claudeCodeClient),
+		"noop":        provider.NoopProvider{},
 	})
 	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
 	permissionEngine := permissions.NewStaticEngineWithOptions(permissions.Options{

@@ -36,6 +36,12 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 	if v := os.Getenv("OPENAI_BASE_URL"); v != "" {
 		cfg.Provider.OpenAI.BaseURL = v
 	}
+	if v := os.Getenv("CLAUDE_CODE_API_KEY"); v != "" {
+		cfg.Provider.ClaudeCode.APIKey = v
+	}
+	if v := os.Getenv("CLAUDE_CODE_BASE_URL"); v != "" {
+		cfg.Provider.ClaudeCode.BaseURL = v
+	}
 	if v := os.Getenv("CLAW_PERMISSION_MODE"); v != "" {
 		mode, err := permissions.ParseMode(v)
 		if err != nil {

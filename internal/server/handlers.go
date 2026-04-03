@@ -199,6 +199,8 @@ func (s *Server) handleListModels(c *gin.Context) {
 	models := []gin.H{
 		{"id": "claude-sonnet-4-5", "provider": "anthropic"},
 		{"id": "claude-haiku-4", "provider": "anthropic"},
+		{"id": "claude-sonnet-4-5", "provider": "claude-code"},
+		{"id": "claude-haiku-4", "provider": "claude-code"},
 		{"id": "gpt-4o-mini", "provider": "openai"},
 		{"id": "gpt-4.1", "provider": "openai"},
 	}

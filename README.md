@@ -34,7 +34,7 @@ That realization led to building this project. Not as a recreation of a branded 
 - **Multi-tenant** — API key isolation with independent sessions and working directories per tenant
 - **Git Worktree Isolation** — Each session binds to its own worktree, sandboxing tool execution naturally
 - **Permission Control** — Three-tier permission model + rule engine + interactive confirmation
-- **Multi-Provider** — Anthropic (HTTP+SSE), OpenAI (HTTP+SSE)
+- **Multi-Provider** — Anthropic (HTTP+SSE), OpenAI (HTTP+SSE), Claude Code (compatible base_url/api_key)
 - **Skill System** — YAML-defined capability templates with session-level activation
 - **WebSocket** — Real-time bidirectional communication with skill integration
 - **Go SDK** — `pkg/sdk` client library for programmatic access
@@ -71,7 +71,7 @@ That realization led to building this project. Not as a recreation of a branded 
                ┌─────────────────────────────┴──────────────────────────────┐
                │                      Provider Layer                       │
                │                                                           │
-               │       Anthropic (HTTP+SSE)     │     OpenAI (HTTP+SSE)    │
+               │   Anthropic │ OpenAI │ Claude Code (Anthropic-compat)  │
                └────────────────────────────────────────────────────────────┘
 ```
 
@@ -160,9 +160,13 @@ client.ChatStream(ctx, sess.ID, "review the code", func(event *sdk.StreamEvent) 
 
 ```bash
 # Provider
-export CLAW_PROVIDER=anthropic          # anthropic | openai
+export CLAW_PROVIDER=anthropic          # anthropic | openai | claude-code
 export CLAW_MODEL=claude-sonnet-4-5     # default model
 export ANTHROPIC_API_KEY=sk-...
+
+# Claude Code (uses Anthropic Messages API with custom base_url)
+export CLAUDE_CODE_API_KEY=sk-...
+export CLAUDE_CODE_BASE_URL=https://your-claude-code-endpoint
 
 # Permissions
 export CLAW_PERMISSION_MODE=workspace-write           # read-only | workspace-write | danger-full-access

@@ -24,6 +24,7 @@ type ProviderConfig struct {
 	DefaultModel    string
 	Anthropic       EndpointConfig
 	OpenAI          EndpointConfig
+	ClaudeCode      EndpointConfig
 }
 
 type EndpointConfig struct {

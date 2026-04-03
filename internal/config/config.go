@@ -22,6 +22,7 @@ func DefaultConfig(workingDir string) Config {
 			DefaultModel:    "claude-sonnet-4-5",
 			Anthropic:       EndpointConfig{BaseURL: "https://api.anthropic.com"},
 			OpenAI:          EndpointConfig{BaseURL: "https://api.openai.com/v1"},
+			ClaudeCode:      EndpointConfig{},
 		},
 		Session: SessionConfig{
 			StorageDir:  storageDir,
