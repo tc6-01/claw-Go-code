@@ -84,6 +84,31 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 	if v := os.Getenv("CLAW_SESSION_STORAGE_DIR"); v != "" {
 		cfg.Session.StorageDir = v
 	}
+	if v := os.Getenv("CLAW_DATA_DIR"); v != "" {
+		cfg.DataDir = v
+	}
+	if v := os.Getenv("CLAW_SERVER_RATE_LIMIT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid CLAW_SERVER_RATE_LIMIT: %w", err)
+		}
+		cfg.Server.RateLimit = n
+	}
+	if v := os.Getenv("CLAW_SANDBOX_ENABLED"); v == "true" || v == "1" {
+		cfg.Sandbox.Enabled = true
+	}
+	if v := os.Getenv("CLAW_SANDBOX_ROOT_DIR"); v != "" {
+		cfg.Sandbox.RootDir = v
+	}
+	if v := os.Getenv("CLAW_SANDBOX_DENY_EXEC"); v == "true" || v == "1" {
+		cfg.Sandbox.DenyExec = true
+	}
+	if v := os.Getenv("CLAW_LOG_LEVEL"); v != "" {
+		cfg.Log.Level = v
+	}
+	if v := os.Getenv("CLAW_LOG_FORMAT"); v != "" {
+		cfg.Log.Format = v
+	}
 
 	return cfg, nil
 }

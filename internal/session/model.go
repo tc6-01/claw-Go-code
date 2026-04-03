@@ -14,6 +14,7 @@ type Store interface {
 	Save(ctx context.Context, session *types.Session) error
 	Load(ctx context.Context, id string) (*types.Session, error)
 	List(ctx context.Context) ([]types.SessionSummary, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type InMemoryStore struct {
@@ -41,10 +42,10 @@ func (s *InMemoryStore) Create(_ context.Context, session *types.Session) error 
 	defer s.mu.Unlock()
 	s.sessions[session.ID] = cloneSession(session)
 	s.metadata[session.ID] = sessionMetadata{
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Model:     "",
-		CWD:       "",
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+		Model:     session.Model,
+		CWD:       session.CWD,
 	}
 	return nil
 }
@@ -53,9 +54,11 @@ func (s *InMemoryStore) Save(_ context.Context, session *types.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[session.ID] = cloneSession(session)
-	if meta, ok := s.metadata[session.ID]; ok {
-		meta.UpdatedAt = time.Now()
-		s.metadata[session.ID] = meta
+	s.metadata[session.ID] = sessionMetadata{
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+		Model:     session.Model,
+		CWD:       session.CWD,
 	}
 	return nil
 }
@@ -68,6 +71,17 @@ func (s *InMemoryStore) Load(_ context.Context, id string) (*types.Session, erro
 		return nil, fmt.Errorf("session %s not found", id)
 	}
 	return cloneSession(session), nil
+}
+
+func (s *InMemoryStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sessions[id]; !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	delete(s.sessions, id)
+	delete(s.metadata, id)
+	return nil
 }
 
 func (s *InMemoryStore) List(_ context.Context) ([]types.SessionSummary, error) {

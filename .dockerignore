@@ -1,0 +1,7 @@
+.git
+.specstory
+.vscode
+*.md
+!README.md
+.gitignore
+.dockerignore

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Web-first AI Agent Harness — Multi-tenant, Streaming SSE, Git Worktree Isolation</strong>
+  <strong>A personal, stronger harness for coding agents — with explicit permissions, scriptable rule management, and a cleaner runtime boundary.</strong>
 </p>
 
 Claw is a Go-based AI Agent Runtime that exposes agent capabilities via HTTP API. It supports multiple providers (Anthropic / OpenAI), multi-tenant session isolation, streaming SSE responses, built-in tool execution, and a permission engine.
@@ -34,34 +34,45 @@ That realization led to building this project. Not as a recreation of a branded 
 - **Multi-tenant** — API key isolation with independent sessions and working directories per tenant
 - **Git Worktree Isolation** — Each session binds to its own worktree, sandboxing tool execution naturally
 - **Permission Control** — Three-tier permission model + rule engine + interactive confirmation
-- **Multi-Provider** — Anthropic (implemented), OpenAI (planned)
+- **Multi-Provider** — Anthropic (HTTP+SSE), OpenAI (HTTP+SSE)
+- **Skill System** — YAML-defined capability templates with session-level activation
+- **WebSocket** — Real-time bidirectional communication with skill integration
+- **Go SDK** — `pkg/sdk` client library for programmatic access
 - **Built-in Tools** — read/write/edit_file, glob/grep_search, bash
 - **CLI** — Interactive REPL for debugging and local use
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│                    Claw                           │
-├──────────────────────────────────────────────────┤
-│                                                  │
-│  CLI (claw)          HTTP Server (gin)            │
-│  └─ REPL             └─ /v1/sessions/*           │
-│                      └─ /v1/sessions/:id/messages│
-│                      └─ /health                  │
-│                                                  │
-│  ┌────────────────────────────────────────────┐  │
-│  │              Runtime Core                  │  │
-│  │  Engine ─── Session Store ─── Tools        │  │
-│  │  Permissions ─── WorkDir Manager           │  │
-│  └────────────────────────────────────────────┘  │
-│                                                  │
-│  ┌────────────────────────────────────────────┐  │
-│  │           Provider Layer                   │  │
-│  │  Anthropic (HTTP+SSE)  │  OpenAI (Stub)    │  │
-│  └────────────────────────────────────────────┘  │
-│                                                  │
-└──────────────────────────────────────────────────┘
+                          ┌─────────────────────────────────────────┐
+                          │                 Claw                    │
+                          └──────────────────┬──────────────────────┘
+                                             │
+                    ┌────────────────────────┴─────────────────────────┐
+                    │                                                  │
+          ┌─────────┴─────────┐                          ┌─────────────┴──────────────┐
+          │     CLI (claw)    │                          │     HTTP Server             │
+          │                   │                          │                             │
+          │   Interactive     │                          │  POST /v1/sessions          │
+          │   REPL            │                          │  POST /v1/sessions/:id/msg  │
+          └─────────┬─────────┘                          │  GET  /health               │
+                    │                                    └─────────────┬───────────────┘
+                    │                                                  │
+                    └────────────────────────┬─────────────────────────┘
+                                             │
+               ┌─────────────────────────────┴──────────────────────────────┐
+               │                       Runtime Core                        │
+               │                                                           │
+               │   Engine ──── Session Store ──── Tool Registry            │
+               │      │                                                    │
+               │   Permissions ──── WorkDir Manager                        │
+               └─────────────────────────────┬──────────────────────────────┘
+                                             │
+               ┌─────────────────────────────┴──────────────────────────────┐
+               │                      Provider Layer                       │
+               │                                                           │
+               │       Anthropic (HTTP+SSE)     │     OpenAI (HTTP+SSE)    │
+               └────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -79,7 +90,7 @@ go run ./cmd/claw
 go run ./cmd/claw "show me the directory structure"
 ```
 
-### HTTP Server Mode (In Development)
+### HTTP Server Mode
 
 ```bash
 # Start server
@@ -98,7 +109,34 @@ curl -N -X POST http://localhost:8080/v1/sessions/<session-id>/messages \
   -d '{"content": "review the code structure"}'
 ```
 
-## API Endpoints (Phase 1)
+### Docker
+
+```bash
+# Build and run
+docker compose up -d
+
+# With custom API keys
+ANTHROPIC_API_KEY=sk-... CLAW_API_KEYS=your-api-key docker compose up -d
+```
+
+### Go SDK
+
+```go
+import "claude-go-code/pkg/sdk"
+
+client := sdk.NewClient("http://localhost:8080", "your-api-key")
+
+sess, _ := client.CreateSession(ctx, nil)
+
+client.ChatStream(ctx, sess.ID, "review the code", func(event *sdk.StreamEvent) bool {
+    if event.Type == "text_delta" {
+        fmt.Print(event.Text)
+    }
+    return event.Type != "done"
+})
+```
+
+## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -109,7 +147,12 @@ curl -N -X POST http://localhost:8080/v1/sessions/<session-id>/messages \
 | `POST` | `/v1/sessions/:id/messages` | Send message (SSE streaming) |
 | `GET` | `/v1/sessions/:id/messages` | Get message history |
 | `GET` | `/v1/models` | List available models |
+| `GET` | `/v1/skills` | List available skills |
+| `POST` | `/v1/skills` | Register a new skill |
+| `DELETE` | `/v1/skills/:name` | Delete a skill |
+| `GET` | `/ws/:id` | WebSocket connection |
 | `GET` | `/health` | Health check |
+| `GET` | `/metrics` | Prometheus metrics |
 
 ## Configuration
 
@@ -165,12 +208,18 @@ claude-go-code/
 │   ├── runtime/               # Core Engine (multi-turn chat loop)
 │   ├── provider/              # Provider abstraction
 │   │   ├── anthropic/         # Anthropic HTTP+SSE implementation
-│   │   └── openai/            # OpenAI stub
-│   ├── session/               # Session store (in-memory / file)
+│   │   └── openai/            # OpenAI HTTP+SSE implementation
+│   ├── session/               # Session store (in-memory / file) + GC
 │   ├── tools/                 # Built-in tools
 │   ├── permissions/           # Permission engine + rule persistence
-│   └── server/                # HTTP Server (in development)
-├── pkg/types/                 # Shared types
+│   ├── server/                # HTTP Server + WebSocket
+│   ├── skill/                 # Skill system (YAML loader + session activation)
+│   ├── sandbox/               # Tool sandbox (path isolation)
+│   ├── sysprompt/             # System prompt builder
+│   └── workdir/               # Git worktree manager
+├── pkg/
+│   ├── types/                 # Shared types
+│   └── sdk/                   # Go SDK client
 ├── SPEC.md                    # Detailed technical specification
 └── go.mod
 ```
@@ -190,13 +239,39 @@ go run ./cmd/claw
 
 ## Roadmap
 
+**Phase 1 — MVP (Done)**
+
 - [x] Core Runtime multi-turn chat loop
 - [x] Anthropic Provider (HTTP + SSE streaming)
 - [x] Built-in tools (6: file read/write/edit, search, bash)
 - [x] Permission engine + rule persistence
 - [x] CLI interactive REPL
-- [ ] Streaming Runtime (`RunPromptStream`)
-- [ ] HTTP Server (gin + middleware + SSE)
-- [ ] Session API + persistence
-- [ ] API Key authentication
-- [ ] Git Worktree isolation
+- [x] Streaming Runtime (`RunPromptStream`)
+- [x] HTTP Server (gin + middleware + SSE)
+- [x] Session API + file persistence
+- [x] API Key authentication
+
+**Phase 2 — Production (Done)**
+
+- [x] Git Worktree isolation (bare repo + per-session worktree)
+- [x] System Prompt assembly (identity + environment + tools)
+- [x] Tool sandbox (Web mode path isolation)
+- [x] Structured logging (slog + JSON)
+- [x] Prometheus Metrics (`/metrics` endpoint)
+- [x] Session TTL + automatic garbage collection
+- [x] Per-key rate limiting
+
+**Phase 3 — Advanced (Done)**
+
+- [x] OpenAI Provider (real HTTP+SSE implementation)
+- [x] Skill system (YAML loader + session activation + trigger matching)
+- [x] WebSocket support (bidirectional, skill integration)
+- [x] Go SDK (`pkg/sdk`)
+- [x] Docker + Compose deployment
+
+**Phase 4 — Future**
+
+- [ ] TypeScript SDK
+- [ ] Context compaction (LLM-based summarization)
+- [ ] MCP (Model Context Protocol) integration
+- [ ] Multi-instance deployment (Redis session store)

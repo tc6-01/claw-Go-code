@@ -14,6 +14,7 @@ import (
 	"claude-go-code/internal/permissions"
 	"claude-go-code/internal/provider"
 	"claude-go-code/internal/session"
+	"claude-go-code/internal/sysprompt"
 	"claude-go-code/internal/tools"
 	"claude-go-code/pkg/types"
 )
@@ -103,9 +104,14 @@ func (e *engine) Run(ctx context.Context, invocation Invocation) error {
 
 	requestMessages := []types.Message{bootstrap}
 	toolSpecs := e.deps.ToolRegistry.Specs()
+	system := sysprompt.Build(sysprompt.Context{
+		CWD:       e.deps.Config.WorkingDir,
+		Model:     model,
+		ToolSpecs: toolSpecs,
+	})
 
 	for turn := 0; turn < maxTurns; turn++ {
-		result, err := e.runTurn(ctx, providerClient, model, requestMessages, toolSpecs)
+		result, err := e.runTurn(ctx, providerClient, model, system, requestMessages, toolSpecs)
 		if err != nil {
 			return err
 		}
@@ -199,9 +205,10 @@ func (e *engine) bootstrapMessage(invocation Invocation, now time.Time) types.Me
 	}
 }
 
-func (e *engine) runTurn(ctx context.Context, providerClient provider.Provider, model string, messages []types.Message, toolSpecs []types.ToolSpec) (turnResult, error) {
+func (e *engine) runTurn(ctx context.Context, providerClient provider.Provider, model string, system string, messages []types.Message, toolSpecs []types.ToolSpec) (turnResult, error) {
 	reader, err := providerClient.Stream(ctx, &types.MessageRequest{
 		Model:    model,
+		System:   system,
 		Messages: append([]types.Message(nil), messages...),
 		Tools:    append([]types.ToolSpec(nil), toolSpecs...),
 	})

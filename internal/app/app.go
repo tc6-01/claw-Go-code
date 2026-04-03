@@ -14,7 +14,6 @@ import (
 	"claude-go-code/pkg/types"
 )
 
-// App wires the top-level dependencies used by the CLI entrypoint.
 type App struct {
 	Config          config.Config
 	SessionStore    session.Store
@@ -41,9 +40,15 @@ func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 		anthropicClient = anthropicprovider.NewHTTPClient(anthropicCfg)
 	}
 
+	openaiCfg := openaiprovider.NewConfig(cfg.Provider.OpenAI)
+	var openaiClient openaiprovider.Client
+	if openaiCfg.APIKey != "" {
+		openaiClient = openaiprovider.NewHTTPClient(openaiCfg)
+	}
+
 	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
 		"anthropic": anthropicprovider.New(anthropicCfg, anthropicClient),
-		"openai":    openaiprovider.New(openaiprovider.NewConfig(cfg.Provider.OpenAI), nil),
+		"openai":    openaiprovider.New(openaiCfg, openaiClient),
 		"noop":      provider.NoopProvider{},
 	})
 	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
@@ -81,4 +86,51 @@ func (a *App) CreateSession(ctx context.Context) (*types.Session, error) {
 
 func (a *App) RunPrompt(ctx context.Context, sessionID string, prompt string) (*runtime.PromptResult, error) {
 	return a.Runtime.RunPrompt(ctx, sessionID, prompt)
+}
+
+func NewForServer(cfg config.Config) (*App, error) {
+	sessionStore, err := session.NewFileStore(cfg.Session.StorageDir)
+	if err != nil {
+		return nil, err
+	}
+
+	anthropicCfg := anthropicprovider.NewConfig(cfg.Provider.Anthropic)
+	var anthropicClient anthropicprovider.Client
+	if anthropicCfg.APIKey != "" {
+		anthropicClient = anthropicprovider.NewHTTPClient(anthropicCfg)
+	}
+
+	openaiCfg := openaiprovider.NewConfig(cfg.Provider.OpenAI)
+	var openaiClient openaiprovider.Client
+	if openaiCfg.APIKey != "" {
+		openaiClient = openaiprovider.NewHTTPClient(openaiCfg)
+	}
+
+	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
+		"anthropic": anthropicprovider.New(anthropicCfg, anthropicClient),
+		"openai":    openaiprovider.New(openaiCfg, openaiClient),
+		"noop":      provider.NoopProvider{},
+	})
+	toolRegistry := tools.NewRegistry(tools.BuiltinTools())
+	permissionEngine := permissions.NewStaticEngineWithOptions(permissions.Options{
+		DefaultMode:      cfg.Permission.Mode,
+		EscalationPolicy: cfg.Permission.EscalationPolicy,
+		RuleCachePath:    cfg.Permission.RulesPath,
+	})
+	runtimeEngine := runtime.NewEngine(runtime.Dependencies{
+		Config:          cfg,
+		SessionStore:    sessionStore,
+		ProviderFactory: providerFactory,
+		ToolRegistry:    toolRegistry,
+		Permission:      permissionEngine,
+	})
+
+	return &App{
+		Config:          cfg,
+		SessionStore:    sessionStore,
+		ProviderFactory: providerFactory,
+		ToolRegistry:    toolRegistry,
+		Permission:      permissionEngine,
+		Runtime:         runtimeEngine,
+	}, nil
 }

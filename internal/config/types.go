@@ -8,12 +8,15 @@ import (
 
 type Config struct {
 	WorkingDir string
+	DataDir    string
 	Provider   ProviderConfig
 	Session    SessionConfig
 	Permission PermissionConfig
 	Compact    CompactConfig
 	CLI        CLIConfig
 	Server     ServerConfig
+	Sandbox    SandboxConfig
+	Log        LogConfig
 }
 
 type ProviderConfig struct {
@@ -56,4 +59,17 @@ type ServerConfig struct {
 	WriteTimeout    time.Duration
 	MaxConcurrent   int
 	ShutdownTimeout time.Duration
+	RateLimit       int
+}
+
+type SandboxConfig struct {
+	Enabled     bool
+	RootDir     string
+	AllowedDirs []string
+	DenyExec    bool
+}
+
+type LogConfig struct {
+	Level  string
+	Format string
 }

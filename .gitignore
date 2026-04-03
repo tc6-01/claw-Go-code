@@ -1,3 +1,9 @@
 .omx/logs/
 .omx/state/
 .omx/metrics.json
+.spec-workflow/
+.vscode/
+.cursor/
+.specstory/
+.omx/
+SPEC_CN.md

@@ -10,11 +10,13 @@ import (
 
 func DefaultConfig(workingDir string) Config {
 	homeDir, _ := os.UserHomeDir()
+	dataDir := filepath.Join(homeDir, ".claw", "data")
 	storageDir := filepath.Join(homeDir, ".claw", "sessions")
 	rulesPath := filepath.Join(homeDir, ".claw", "permissions", "rules.json")
 
 	return Config{
 		WorkingDir: workingDir,
+		DataDir:    dataDir,
 		Provider: ProviderConfig{
 			DefaultProvider: "anthropic",
 			DefaultModel:    "claude-sonnet-4-5",
@@ -40,6 +42,10 @@ func DefaultConfig(workingDir string) Config {
 			WriteTimeout:    300 * time.Second,
 			MaxConcurrent:   100,
 			ShutdownTimeout: 30 * time.Second,
+		},
+		Log: LogConfig{
+			Level:  "info",
+			Format: "json",
 		},
 	}
 }
