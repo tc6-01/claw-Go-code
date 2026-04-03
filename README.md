@@ -75,6 +75,18 @@ go run ./cmd/claw permissions rules add \
   --command-prefix git
 ```
 
+The same command can return JSON for scripts:
+
+```bash
+go run ./cmd/claw permissions rules add \
+  --tool bash \
+  --current workspace-write \
+  --required danger-full-access \
+  --decision allow \
+  --command-prefix git \
+  --json
+```
+
 Remove one persisted rule by index:
 
 ```bash
@@ -87,6 +99,15 @@ Remove persisted rules by matcher:
 go run ./cmd/claw permissions rules remove \
   --tool web_fetch \
   --host example.com
+```
+
+Matcher-based removal also supports JSON:
+
+```bash
+go run ./cmd/claw permissions rules remove \
+  --tool web_fetch \
+  --host example.com \
+  --json
 ```
 
 Clear persisted rules:

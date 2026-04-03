@@ -20,6 +20,19 @@ type ruleFilter struct {
 	targetPattern string
 }
 
+type ruleListResponse struct {
+	Path  string                   `json:"path"`
+	Rules []permissions.StoredRule `json:"rules"`
+}
+
+type ruleMutationResponse struct {
+	Path           string                   `json:"path"`
+	Action         string                   `json:"action"`
+	Rule           *permissions.StoredRule  `json:"rule,omitempty"`
+	RemovedRules   []permissions.StoredRule `json:"removed_rules,omitempty"`
+	RemainingCount int                      `json:"remaining_count"`
+}
+
 func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer) (bool, error) {
 	if len(args) < 3 || args[0] != "permissions" || args[1] != "rules" {
 		return false, nil
@@ -27,19 +40,19 @@ func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer
 
 	switch args[2] {
 	case "list":
+		jsonOutput, subArgs := consumeJSONFlag(args[3:])
 		rules, err := permissions.LoadRules(cfg.Permission.RulesPath)
 		if err != nil {
 			return true, err
 		}
-		if len(args) > 3 && args[3] == "--json" {
-			payload := struct {
-				Path  string                   `json:"path"`
-				Rules []permissions.StoredRule `json:"rules"`
-			}{
+		if jsonOutput {
+			return true, json.NewEncoder(out).Encode(ruleListResponse{
 				Path:  cfg.Permission.RulesPath,
 				Rules: rules,
-			}
-			return true, json.NewEncoder(out).Encode(payload)
+			})
+		}
+		if len(subArgs) > 0 {
+			return true, fmt.Errorf("unknown arguments for list: %s", strings.Join(subArgs, " "))
 		}
 		if _, err := fmt.Fprintf(out, "Permission rules file: %s\n", cfg.Permission.RulesPath); err != nil {
 			return true, err
@@ -61,7 +74,8 @@ func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer
 		_, err := fmt.Fprintf(out, "Cleared persisted permission rules at %s\n", cfg.Permission.RulesPath)
 		return true, err
 	case "add":
-		rule, err := parseRuleAddArgs(args[3:])
+		jsonOutput, subArgs := consumeJSONFlag(args[3:])
+		rule, err := parseRuleAddArgs(subArgs)
 		if err != nil {
 			return true, err
 		}
@@ -87,19 +101,29 @@ func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer
 		if replaced {
 			action = "Updated"
 		}
+		if jsonOutput {
+			ruleCopy := rule
+			return true, json.NewEncoder(out).Encode(ruleMutationResponse{
+				Path:           cfg.Permission.RulesPath,
+				Action:         strings.ToLower(action),
+				Rule:           &ruleCopy,
+				RemainingCount: len(rules),
+			})
+		}
 		_, err = fmt.Fprintf(out, "%s rule: %s -> %s\n", action, permissions.DescribeRule(rule), rule.Decision)
 		return true, err
 	case "remove":
-		if len(args) < 4 {
+		jsonOutput, subArgs := consumeJSONFlag(args[3:])
+		if len(subArgs) < 1 {
 			return true, fmt.Errorf("usage: permissions rules remove <index> | permissions rules remove --tool <name> [matcher flags]")
 		}
 		rules, err := permissions.LoadRules(cfg.Permission.RulesPath)
 		if err != nil {
 			return true, err
 		}
-		if index, err := strconv.Atoi(args[3]); err == nil {
+		if index, err := strconv.Atoi(subArgs[0]); err == nil {
 			if index < 1 {
-				return true, fmt.Errorf("invalid rule index: %s", args[3])
+				return true, fmt.Errorf("invalid rule index: %s", subArgs[0])
 			}
 			if index > len(rules) {
 				return true, fmt.Errorf("rule index %d out of range", index)
@@ -109,10 +133,18 @@ func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer
 			if err := saveOrClearRules(cfg.Permission.RulesPath, rules); err != nil {
 				return true, err
 			}
+			if jsonOutput {
+				return true, json.NewEncoder(out).Encode(ruleMutationResponse{
+					Path:           cfg.Permission.RulesPath,
+					Action:         "remove",
+					RemovedRules:   []permissions.StoredRule{removed},
+					RemainingCount: len(rules),
+				})
+			}
 			_, err = fmt.Fprintf(out, "Removed rule %d: %s -> %s\n", index, permissions.DescribeRule(removed), removed.Decision)
 			return true, err
 		}
-		filter, err := parseRuleFilterArgs(args[3:])
+		filter, err := parseRuleFilterArgs(subArgs)
 		if err != nil {
 			return true, err
 		}
@@ -131,11 +163,32 @@ func handlePermissionRuleCommand(cfg config.Config, args []string, out io.Writer
 		if err := saveOrClearRules(cfg.Permission.RulesPath, kept); err != nil {
 			return true, err
 		}
+		if jsonOutput {
+			return true, json.NewEncoder(out).Encode(ruleMutationResponse{
+				Path:           cfg.Permission.RulesPath,
+				Action:         "remove",
+				RemovedRules:   removed,
+				RemainingCount: len(kept),
+			})
+		}
 		_, err = fmt.Fprintf(out, "Removed %d rule(s) matching filter\n", len(removed))
 		return true, err
 	default:
 		return true, fmt.Errorf("unknown permissions rules command: %s", args[2])
 	}
+}
+
+func consumeJSONFlag(args []string) (bool, []string) {
+	filtered := make([]string, 0, len(args))
+	jsonOutput := false
+	for _, arg := range args {
+		if arg == "--json" {
+			jsonOutput = true
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return jsonOutput, filtered
 }
 
 func parseRuleAddArgs(args []string) (permissions.StoredRule, error) {

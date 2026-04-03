@@ -216,6 +216,46 @@ func TestHandlePermissionRuleCommandAdd(t *testing.T) {
 	}
 }
 
+func TestHandlePermissionRuleCommandAddJSON(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
+
+	var out bytes.Buffer
+	handled, err := handlePermissionRuleCommand(cfg, []string{
+		"permissions", "rules", "add",
+		"--tool", "web_fetch",
+		"--current", string(permissions.ModeWorkspaceWrite),
+		"--required", string(permissions.ModeDangerFull),
+		"--decision", string(permissions.DecisionDeny),
+		"--host", "example.com",
+		"--json",
+	}, &out)
+	if err != nil {
+		t.Fatalf("handlePermissionRuleCommand() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("expected command to be handled")
+	}
+	var payload struct {
+		Path           string                  `json:"path"`
+		Action         string                  `json:"action"`
+		Rule           *permissions.StoredRule `json:"rule"`
+		RemainingCount int                     `json:"remaining_count"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v; output=%s", err, out.String())
+	}
+	if payload.Action != "added" {
+		t.Fatalf("unexpected action: %#v", payload)
+	}
+	if payload.Rule == nil || payload.Rule.Matcher.TargetKind != permissions.RuleTargetHost {
+		t.Fatalf("unexpected rule payload: %#v", payload)
+	}
+	if payload.RemainingCount != 1 {
+		t.Fatalf("unexpected remaining count: %#v", payload)
+	}
+}
+
 func TestHandlePermissionRuleCommandAddUpdatesExistingRule(t *testing.T) {
 	cfg := config.DefaultConfig(t.TempDir())
 	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
@@ -299,5 +339,66 @@ func TestHandlePermissionRuleCommandRemoveByMatcher(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Removed 1 rule(s) matching filter") {
 		t.Fatalf("unexpected remove output: %s", out.String())
+	}
+}
+
+func TestHandlePermissionRuleCommandRemoveJSON(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Permission.RulesPath = t.TempDir() + "/rules.json"
+
+	for _, args := range [][]string{
+		{
+			"permissions", "rules", "add",
+			"--tool", "bash",
+			"--current", string(permissions.ModeWorkspaceWrite),
+			"--required", string(permissions.ModeDangerFull),
+			"--decision", string(permissions.DecisionAllow),
+			"--command-prefix", "git",
+		},
+		{
+			"permissions", "rules", "add",
+			"--tool", "web_fetch",
+			"--current", string(permissions.ModeWorkspaceWrite),
+			"--required", string(permissions.ModeDangerFull),
+			"--decision", string(permissions.DecisionDeny),
+			"--host", "example.com",
+		},
+	} {
+		var out bytes.Buffer
+		if _, err := handlePermissionRuleCommand(cfg, args, &out); err != nil {
+			t.Fatalf("seed rule command error = %v", err)
+		}
+	}
+
+	var out bytes.Buffer
+	handled, err := handlePermissionRuleCommand(cfg, []string{
+		"permissions", "rules", "remove",
+		"--tool", "web_fetch",
+		"--host", "example.com",
+		"--json",
+	}, &out)
+	if err != nil {
+		t.Fatalf("handlePermissionRuleCommand() error = %v", err)
+	}
+	if !handled {
+		t.Fatal("expected command to be handled")
+	}
+	var payload struct {
+		Path           string                   `json:"path"`
+		Action         string                   `json:"action"`
+		RemovedRules   []permissions.StoredRule `json:"removed_rules"`
+		RemainingCount int                      `json:"remaining_count"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v; output=%s", err, out.String())
+	}
+	if payload.Action != "remove" {
+		t.Fatalf("unexpected action payload: %#v", payload)
+	}
+	if len(payload.RemovedRules) != 1 || payload.RemovedRules[0].Matcher.ToolName != "web_fetch" {
+		t.Fatalf("unexpected removed rules payload: %#v", payload)
+	}
+	if payload.RemainingCount != 1 {
+		t.Fatalf("unexpected remaining count: %#v", payload)
 	}
 }
