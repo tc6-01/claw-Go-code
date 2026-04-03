@@ -27,12 +27,12 @@ func TestSkillValidation(t *testing.T) {
 }
 
 func TestSkillTrigger(t *testing.T) {
-	sk := &Skill{Name: "review", Triggers: []string{"review", "审查"}}
+	sk := &Skill{Name: "review", Triggers: []string{"review", "inspect"}}
 	if !sk.MatchesTrigger("please review my code") {
 		t.Fatal("expected trigger match")
 	}
-	if !sk.MatchesTrigger("帮我审查代码") {
-		t.Fatal("expected trigger match for Chinese")
+	if !sk.MatchesTrigger("inspect the module") {
+		t.Fatal("expected trigger match for second keyword")
 	}
 	if sk.MatchesTrigger("write some code") {
 		t.Fatal("unexpected trigger match")
