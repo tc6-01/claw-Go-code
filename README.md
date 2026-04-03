@@ -4,25 +4,31 @@
   <img src="./claw-hero.jpeg" alt="Claw hero image" width="280">
 </p>
 
+<p align="center">
+  <strong>A personal, stronger harness for coding agents — with explicit permissions, scriptable rule management, and a cleaner runtime boundary.</strong>
+</p>
+
 `claw-Go-code` is a Go-based agent harness that experiments with a safer, more controllable, and more extensible execution loop for coding agents.
 
-It is intentionally positioned as a harness layer:
+> [!IMPORTANT]
+> This repository is **not** a marker dump for leaked Claude Code source, and it should not be read that way.
+> It is an independent harness-oriented implementation focused on building a stricter, more inspectable, and more scriptable agent runtime in Go.
+
+## Highlights
 
 - stronger permission routing
 - explicit tool execution boundaries
 - session and persisted approval rules
-- testable runtime behavior
-- room for custom policy and orchestration logic
+- target-aware rule matching for commands, hosts, and paths
+- human-friendly and JSON-friendly CLI rule management
+- testable runtime behavior with small, reviewable components
 
-This repository is **not** a marker dump for leaked Claude Code source, and it should not be read that way.
-It is an independent harness-oriented implementation that explores how to build a stricter and more inspectable agent runtime in Go.
+## Quick Start
 
-## 30-Second Start
+### 1. Pick a provider
 
 ```bash
 export ANTHROPIC_API_KEY=your_key_here
-go run ./cmd/claw status
-go run ./cmd/claw permissions rules list
 ```
 
 If you want OpenAI instead:
@@ -30,73 +36,25 @@ If you want OpenAI instead:
 ```bash
 export CLAW_PROVIDER=openai
 export OPENAI_API_KEY=your_key_here
-go run ./cmd/claw status
 ```
 
-## Quick Start
-
-### 1. Prepare credentials
-
-By default the harness uses Anthropic.
-
-```bash
-export ANTHROPIC_API_KEY=your_key_here
-```
-
-If you want to use OpenAI instead:
-
-```bash
-export CLAW_PROVIDER=openai
-export OPENAI_API_KEY=your_key_here
-```
-
-### 2. Run a smoke test
-
-From the repository root:
+### 2. Run the smoke test
 
 ```bash
 go run ./cmd/claw status
 ```
 
-That verifies the CLI boots, loads config, builds the runtime, and can complete a minimal request loop.
+That verifies the CLI boots, loads config, builds the runtime, and completes a minimal request loop.
 
-### 3. Choose a permission posture
-
-The default mode is `workspace-write` with escalation denied.
-
-Examples:
+### 3. Pick a permission posture
 
 ```bash
 export CLAW_PERMISSION_MODE=read-only
 export CLAW_PERMISSION_ESCALATION_POLICY=prompt
 ```
 
-With `prompt`, the interactive CLI can approve once, approve for the session, deny once, deny for the session, or persist an allow/block rule.
-
-### 4. Inspect or manage saved rules
-
-```bash
-go run ./cmd/claw permissions rules list
-go run ./cmd/claw permissions rules list --json
-```
-
-## What this project focuses on
-
-- A compact CLI entrypoint in `cmd/claw`
-- A runtime loop in `internal/runtime`
-- Tool registration and execution in `internal/tools`
-- Permission policy and confirmation logic in `internal/permissions`
-- Provider abstraction in `internal/provider`
-
-## Permission model
-
-The harness supports three permission modes:
-
-- `read-only`
-- `workspace-write`
-- `danger-full-access`
-
-When escalation policy is set to `prompt`, the CLI can:
+The default mode is `workspace-write` with escalation denied.
+If you set `prompt`, the interactive CLI can:
 
 - allow once
 - allow for the current session
@@ -104,6 +62,13 @@ When escalation policy is set to `prompt`, the CLI can:
 - deny for the current session
 - allow as a persisted rule
 - block as a persisted rule
+
+### 4. Inspect saved rules
+
+```bash
+go run ./cmd/claw permissions rules list
+go run ./cmd/claw permissions rules list --json
+```
 
 Persisted rules are stored by default at:
 
@@ -117,7 +82,7 @@ You can override that path with:
 CLAW_PERMISSION_RULES_PATH=/custom/path/rules.json
 ```
 
-## Rule management
+## Rule Management
 
 List persisted rules:
 
@@ -182,6 +147,23 @@ Clear persisted rules:
 ```bash
 go run ./cmd/claw permissions rules clear
 ```
+
+## What this project focuses on
+
+- `cmd/claw` — compact CLI entrypoint
+- `internal/runtime` — request loop and tool execution flow
+- `internal/tools` — builtin tool registration and execution
+- `internal/permissions` — policy, confirmation, and persisted rules
+- `internal/provider` — provider abstraction for model backends
+- `internal/config` — environment-driven runtime configuration
+
+## Permission Model
+
+The harness supports three permission modes:
+
+- `read-only`
+- `workspace-write`
+- `danger-full-access`
 
 ## Why it exists
 
