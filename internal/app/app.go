@@ -11,6 +11,7 @@ import (
 	"claude-go-code/internal/runtime"
 	"claude-go-code/internal/session"
 	"claude-go-code/internal/tools"
+	"claude-go-code/pkg/types"
 )
 
 // App wires the top-level dependencies used by the CLI entrypoint.
@@ -33,8 +34,15 @@ func New(cfg config.Config) (*App, error) {
 
 func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 	sessionStore := session.NewInMemoryStore()
+
+	anthropicCfg := anthropicprovider.NewConfig(cfg.Provider.Anthropic)
+	var anthropicClient anthropicprovider.Client
+	if anthropicCfg.APIKey != "" {
+		anthropicClient = anthropicprovider.NewHTTPClient(anthropicCfg)
+	}
+
 	providerFactory := provider.NewFactory(cfg.Provider.DefaultProvider, map[string]provider.Provider{
-		"anthropic": anthropicprovider.New(anthropicprovider.NewConfig(cfg.Provider.Anthropic), nil),
+		"anthropic": anthropicprovider.New(anthropicCfg, anthropicClient),
 		"openai":    openaiprovider.New(openaiprovider.NewConfig(cfg.Provider.OpenAI), nil),
 		"noop":      provider.NoopProvider{},
 	})
@@ -65,4 +73,12 @@ func NewWithOptions(cfg config.Config, opts Options) (*App, error) {
 
 func (a *App) Run(ctx context.Context, args []string) error {
 	return a.Runtime.Run(ctx, runtime.Invocation{Args: args})
+}
+
+func (a *App) CreateSession(ctx context.Context) (*types.Session, error) {
+	return a.Runtime.CreateSession(ctx)
+}
+
+func (a *App) RunPrompt(ctx context.Context, sessionID string, prompt string) (*runtime.PromptResult, error) {
+	return a.Runtime.RunPrompt(ctx, sessionID, prompt)
 }

@@ -12,10 +12,9 @@ type Session struct {
 	CWD            string           `json:"cwd"`
 	Model          string           `json:"model"`
 	PermissionMode string           `json:"permission_mode"`
-	Messages       []Message        `json:"messages,omitempty"`
+	Messages       []Message        `json:"messages"`
 	ToolTrace      []ToolTraceEntry `json:"tool_trace,omitempty"`
-	Usage          []Usage          `json:"usage,omitempty"`
-	Todos          []TodoItem       `json:"todos,omitempty"`
+	Usage          []Usage         `json:"usage,omitempty"`
 }
 
 type SessionSummary struct {

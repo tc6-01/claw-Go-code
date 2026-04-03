@@ -1,189 +1,202 @@
-# claw-Go-code
+# Claw
 
 <p align="center">
   <img src="./claw-hero.jpeg" alt="Claw hero image" width="280">
 </p>
 
 <p align="center">
-  <strong>A personal, stronger harness for coding agents — with explicit permissions, scriptable rule management, and a cleaner runtime boundary.</strong>
+  <strong>Web-first AI Agent Harness — Multi-tenant, Streaming SSE, Git Worktree Isolation</strong>
 </p>
 
-`claw-Go-code` is a Go-based agent harness that experiments with a safer, more controllable, and more extensible execution loop for coding agents.
+Claw is a Go-based AI Agent Runtime that exposes agent capabilities via HTTP API. It supports multiple providers (Anthropic / OpenAI), multi-tenant session isolation, streaming SSE responses, built-in tool execution, and a permission engine.
 
 > [!IMPORTANT]
 > This repository is **not** a marker dump for leaked Claude Code source, and it should not be read that way.
 > It is an independent harness-oriented implementation focused on building a stricter, more inspectable, and more scriptable agent runtime in Go.
 
-## Highlights
+## Why It Exists
 
-- stronger permission routing
-- explicit tool execution boundaries
-- session and persisted approval rules
-- target-aware rule matching for commands, hosts, and paths
-- human-friendly and JSON-friendly CLI rule management
-- testable runtime behavior with small, reviewable components
+The story behind this project starts with a real pain point: using Claude CLI through external scheduling systems quickly revealed that the bottleneck was never the model itself — it was everything around it. Prompt composition, context management, tool orchestration, session state, and runtime control were all being stitched together in ways that were fragile, opaque, and hard to maintain.
+
+After studying how Claude Code approaches the core agent loop — the way it separates harness from model, enforces permission boundaries, and keeps the execution flow inspectable — we recognized that the most valuable lesson wasn't "how to call a model," but "how to build a runtime that calls a model well."
+
+That realization led to building this project. Not as a recreation of a branded product, but as a Go-based implementation of the same core principles: a strict harness with explicit tool execution boundaries, permission routing, rule-based policy management, and a clean separation between runtime control and model interaction.
+
+**Why Go?** Our team works primarily in Go. Moving the agent runtime into the same language our team already lives in means it's easier to maintain, extend, debug, and integrate into existing infrastructure — rather than treating it as a black box that only a few people can touch.
+
+**Why Web-first?** Most agent runtimes are built CLI-first and bolted onto web later. We went the other direction — HTTP API as the primary interface from day one, with SSE streaming, multi-tenant session isolation, and Git worktree sandboxing designed in from the start. The CLI exists for debugging and local use, but the real target is serving agent capabilities to web applications at scale.
+
+**Why open source?** Many engineering teams are in the same position: they use Go, they care about LLM harness quality, and they're looking for a principled way to build agent runtimes rather than duct-taping prompts and wrappers together. We hope sharing this implementation opens up a broader conversation — about harness design, tool use patterns, permission models, and what it really takes to move agent systems from "working demo" to "production-ready."
+
+## Features
+
+- **Web-first** — HTTP API as the primary interface, session-only model, SSE streaming
+- **Multi-tenant** — API key isolation with independent sessions and working directories per tenant
+- **Git Worktree Isolation** — Each session binds to its own worktree, sandboxing tool execution naturally
+- **Permission Control** — Three-tier permission model + rule engine + interactive confirmation
+- **Multi-Provider** — Anthropic (implemented), OpenAI (planned)
+- **Built-in Tools** — read/write/edit_file, glob/grep_search, bash
+- **CLI** — Interactive REPL for debugging and local use
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│                    Claw                           │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│  CLI (claw)          HTTP Server (gin)            │
+│  └─ REPL             └─ /v1/sessions/*           │
+│                      └─ /v1/sessions/:id/messages│
+│                      └─ /health                  │
+│                                                  │
+│  ┌────────────────────────────────────────────┐  │
+│  │              Runtime Core                  │  │
+│  │  Engine ─── Session Store ─── Tools        │  │
+│  │  Permissions ─── WorkDir Manager           │  │
+│  └────────────────────────────────────────────┘  │
+│                                                  │
+│  ┌────────────────────────────────────────────┐  │
+│  │           Provider Layer                   │  │
+│  │  Anthropic (HTTP+SSE)  │  OpenAI (Stub)    │  │
+│  └────────────────────────────────────────────┘  │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
 
 ## Quick Start
 
-### 1. Pick a provider
+### CLI Mode
 
 ```bash
+# Set API key
 export ANTHROPIC_API_KEY=your_key_here
+
+# Interactive REPL
+go run ./cmd/claw
+
+# One-shot execution
+go run ./cmd/claw "show me the directory structure"
 ```
 
-If you want OpenAI instead:
+### HTTP Server Mode (In Development)
 
 ```bash
-export CLAW_PROVIDER=openai
-export OPENAI_API_KEY=your_key_here
+# Start server
+go run ./cmd/claw serve --port 8080
+
+# Create a session
+curl -X POST http://localhost:8080/v1/sessions \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "claude-sonnet-4-5"}'
+
+# Send a message (SSE streaming response)
+curl -N -X POST http://localhost:8080/v1/sessions/<session-id>/messages \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "review the code structure"}'
 ```
 
-### 2. Run the smoke test
+## API Endpoints (Phase 1)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/sessions` | Create session (optionally specify repo_url) |
+| `GET` | `/v1/sessions` | List sessions |
+| `GET` | `/v1/sessions/:id` | Get session details |
+| `DELETE` | `/v1/sessions/:id` | Delete session (cleanup worktree) |
+| `POST` | `/v1/sessions/:id/messages` | Send message (SSE streaming) |
+| `GET` | `/v1/sessions/:id/messages` | Get message history |
+| `GET` | `/v1/models` | List available models |
+| `GET` | `/health` | Health check |
+
+## Configuration
+
+### Environment Variables
 
 ```bash
-go run ./cmd/claw status
+# Provider
+export CLAW_PROVIDER=anthropic          # anthropic | openai
+export CLAW_MODEL=claude-sonnet-4-5     # default model
+export ANTHROPIC_API_KEY=sk-...
+
+# Permissions
+export CLAW_PERMISSION_MODE=workspace-write           # read-only | workspace-write | danger-full-access
+export CLAW_PERMISSION_ESCALATION_POLICY=deny          # deny | prompt
+export CLAW_PERMISSION_RULES_PATH=~/.claw/rules.json
 ```
 
-That verifies the CLI boots, loads config, builds the runtime, and completes a minimal request loop.
+### Permission Modes
 
-### 3. Pick a permission posture
+| Mode | Description |
+|------|-------------|
+| `read-only` | Only read-only tools allowed (read_file, glob_search, grep_search) |
+| `workspace-write` | File read/write allowed, dangerous operations like bash blocked |
+| `danger-full-access` | All operations allowed |
 
-```bash
-export CLAW_PERMISSION_MODE=read-only
-export CLAW_PERMISSION_ESCALATION_POLICY=prompt
-```
-
-The default mode is `workspace-write` with escalation denied.
-If you set `prompt`, the interactive CLI can:
-
-- allow once
-- allow for the current session
-- deny once
-- deny for the current session
-- allow as a persisted rule
-- block as a persisted rule
-
-### 4. Inspect saved rules
+### Rule Management
 
 ```bash
+# List rules
 go run ./cmd/claw permissions rules list
-go run ./cmd/claw permissions rules list --json
-```
 
-Persisted rules are stored by default at:
-
-```text
-~/.claude-go-code/permissions/rules.json
-```
-
-You can override that path with:
-
-```bash
-CLAW_PERMISSION_RULES_PATH=/custom/path/rules.json
-```
-
-## Rule Management
-
-List persisted rules:
-
-```bash
-go run ./cmd/claw permissions rules list
-```
-
-List persisted rules as JSON:
-
-```bash
-go run ./cmd/claw permissions rules list --json
-```
-
-Add a persisted rule manually:
-
-```bash
+# Add a rule
 go run ./cmd/claw permissions rules add \
-  --tool bash \
-  --current workspace-write \
-  --required danger-full-access \
-  --decision allow \
+  --tool bash --current workspace-write \
+  --required danger-full-access --decision allow \
   --command-prefix git
-```
 
-The same command can return JSON for scripts:
-
-```bash
-go run ./cmd/claw permissions rules add \
-  --tool bash \
-  --current workspace-write \
-  --required danger-full-access \
-  --decision allow \
-  --command-prefix git \
-  --json
-```
-
-Remove one persisted rule by index:
-
-```bash
+# Remove a rule by index
 go run ./cmd/claw permissions rules remove 1
-```
 
-Remove persisted rules by matcher:
-
-```bash
-go run ./cmd/claw permissions rules remove \
-  --tool web_fetch \
-  --host example.com
-```
-
-Matcher-based removal also supports JSON:
-
-```bash
-go run ./cmd/claw permissions rules remove \
-  --tool web_fetch \
-  --host example.com \
-  --json
-```
-
-Clear persisted rules:
-
-```bash
+# Clear all rules
 go run ./cmd/claw permissions rules clear
 ```
 
-## What this project focuses on
+## Project Structure
 
-- `cmd/claw` — compact CLI entrypoint
-- `internal/runtime` — request loop and tool execution flow
-- `internal/tools` — builtin tool registration and execution
-- `internal/permissions` — policy, confirmation, and persisted rules
-- `internal/provider` — provider abstraction for model backends
-- `internal/config` — environment-driven runtime configuration
-
-## Permission Model
-
-The harness supports three permission modes:
-
-- `read-only`
-- `workspace-write`
-- `danger-full-access`
-
-## Why it exists
-
-Most agent CLIs blur together policy, tool execution, and model interaction.
-This project tries to separate those concerns so they can be reasoned about, tested, and evolved independently.
-
-That means the goal here is not to mimic a branded product artifact.
-The goal is to build a better harness:
-
-- easier to audit
-- easier to extend
-- easier to validate
-- harder to accidentally over-permit
+```
+claude-go-code/
+├── cmd/claw/                  # CLI entrypoint
+├── internal/
+│   ├── app/                   # Application assembly (DI)
+│   ├── config/                # Config (defaults + env vars)
+│   ├── runtime/               # Core Engine (multi-turn chat loop)
+│   ├── provider/              # Provider abstraction
+│   │   ├── anthropic/         # Anthropic HTTP+SSE implementation
+│   │   └── openai/            # OpenAI stub
+│   ├── session/               # Session store (in-memory / file)
+│   ├── tools/                 # Built-in tools
+│   ├── permissions/           # Permission engine + rule persistence
+│   └── server/                # HTTP Server (in development)
+├── pkg/types/                 # Shared types
+├── SPEC.md                    # Detailed technical specification
+└── go.mod
+```
 
 ## Development
 
-Run the main verification flow:
-
 ```bash
+# Run tests
 go test ./...
-env GOCACHE=/tmp/go-build go vet ./...
-env GOCACHE=/tmp/go-build go run ./cmd/claw status
+
+# Static analysis
+go vet ./...
+
+# Launch REPL
+go run ./cmd/claw
 ```
+
+## Roadmap
+
+- [x] Core Runtime multi-turn chat loop
+- [x] Anthropic Provider (HTTP + SSE streaming)
+- [x] Built-in tools (6: file read/write/edit, search, bash)
+- [x] Permission engine + rule persistence
+- [x] CLI interactive REPL
+- [ ] Streaming Runtime (`RunPromptStream`)
+- [ ] HTTP Server (gin + middleware + SSE)
+- [ ] Session API + persistence
+- [ ] API Key authentication
+- [ ] Git Worktree isolation

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,14 +18,22 @@ import (
 	"claude-go-code/pkg/types"
 )
 
-const maxTurns = 8
+const maxTurns = math.MaxInt
 
 type Invocation struct {
 	Args []string
 }
 
+type PromptResult struct {
+	Session   *types.Session
+	Assistant types.Message
+}
+
 type Engine interface {
 	Run(ctx context.Context, invocation Invocation) error
+	CreateSession(ctx context.Context) (*types.Session, error)
+	RunPrompt(ctx context.Context, sessionID string, prompt string) (*PromptResult, error)
+	RunPromptStream(ctx context.Context, sessionID string, prompt string) (<-chan StreamEvent, error)
 }
 
 type Dependencies struct {
@@ -45,6 +55,28 @@ type turnResult struct {
 
 func NewEngine(deps Dependencies) Engine {
 	return &engine{deps: deps}
+}
+
+func (e *engine) CreateSession(ctx context.Context) (*types.Session, error) {
+	_, model, err := e.resolveProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	sess := &types.Session{
+		ID:             nextSessionID("session"),
+		Version:        types.CurrentSessionVersion,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		CWD:            e.deps.Config.WorkingDir,
+		Model:          model,
+		PermissionMode: string(e.deps.Config.Permission.Mode),
+	}
+	if err := e.deps.SessionStore.Create(ctx, sess); err != nil {
+		return nil, err
+	}
+	return sess, nil
 }
 
 func (e *engine) Run(ctx context.Context, invocation Invocation) error {
@@ -81,9 +113,6 @@ func (e *engine) Run(ctx context.Context, invocation Invocation) error {
 		if shouldPersistAssistant(result.assistant) {
 			sess.Messages = append(sess.Messages, result.assistant)
 			requestMessages = append(requestMessages, result.assistant)
-			if hasUsage(result.assistant.Usage) {
-				sess.Usage = append(sess.Usage, result.assistant.Usage)
-			}
 		}
 
 		if len(result.toolCalls) == 0 {
@@ -92,11 +121,9 @@ func (e *engine) Run(ctx context.Context, invocation Invocation) error {
 		}
 
 		for _, call := range result.toolCalls {
-			toolMessage, trace, toolResult := e.executeTool(ctx, call)
-			sess.ToolTrace = append(sess.ToolTrace, trace)
+			toolMessage, _ := e.executeTool(ctx, call)
 			sess.Messages = append(sess.Messages, toolMessage)
 			requestMessages = append(requestMessages, toolMessage)
-			e.applyToolSideEffects(sess, call.Name, toolResult)
 		}
 		sess.UpdatedAt = time.Now().UTC()
 		if err := e.deps.SessionStore.Save(ctx, sess); err != nil {
@@ -105,6 +132,49 @@ func (e *engine) Run(ctx context.Context, invocation Invocation) error {
 	}
 
 	return fmt.Errorf("runtime exceeded max turns (%d)", maxTurns)
+}
+
+func (e *engine) RunPrompt(ctx context.Context, sessionID string, prompt string) (*PromptResult, error) {
+	ch, err := e.RunPromptStream(ctx, sessionID, prompt)
+	if err != nil {
+		return nil, err
+	}
+	return collectStreamResult(ctx, sessionID, e.deps.SessionStore, ch)
+}
+
+func collectStreamResult(ctx context.Context, sessionID string, store session.Store, ch <-chan StreamEvent) (*PromptResult, error) {
+	var lastAssistant types.Message
+	var lastErr error
+
+	for event := range ch {
+		switch event.Type {
+		case EventMessageEnd:
+			if event.Message != nil {
+				lastAssistant = *event.Message
+			}
+		case EventError:
+			if event.Error != nil {
+				lastErr = event.Error
+			} else {
+				lastErr = fmt.Errorf("%s", event.ErrorText)
+			}
+		case EventDone:
+			// stream finished
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+
+	sess, err := store.Load(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	return &PromptResult{
+		Session:   sess,
+		Assistant: lastAssistant,
+	}, nil
 }
 
 func (e *engine) resolveProvider() (provider.Provider, string, error) {
@@ -182,7 +252,7 @@ func (e *engine) runTurn(ctx context.Context, providerClient provider.Provider, 
 	return turnResult{assistant: assistant, toolCalls: toolCalls}, nil
 }
 
-func (e *engine) executeTool(ctx context.Context, call *types.ToolCall) (types.Message, types.ToolTraceEntry, *types.ToolResult) {
+func (e *engine) executeTool(ctx context.Context, call *types.ToolCall) (types.Message, *types.ToolResult) {
 	executor := tools.NewExecutor(e.deps.ToolRegistry, e.deps.Permission)
 	result, err := executor.Execute(ctx, tools.ExecuteRequest{
 		Call: *call,
@@ -206,17 +276,9 @@ func (e *engine) executeTool(ctx context.Context, call *types.ToolCall) (types.M
 				Metadata:   map[string]string{"tool_call_id": call.ID, "error": "tool_execution_failed"},
 				ToolCalls:  flattenToolCalls([]*types.ToolCall{call}),
 				ToolResult: cloneToolResult(toolResult),
-			}, types.ToolTraceEntry{
-				ID:        call.ID,
-				Name:      call.Name,
-				Input:     stringifyJSON(call.Input),
-				Error:     err.Error(),
-				StartedAt: now,
-				EndedAt:   now,
-				Success:   false,
 			}, toolResult
 	}
-	return result.Message, result.Trace, result.Result
+	return result.Message, result.Result
 }
 
 func shouldPersistAssistant(message types.Message) bool {
@@ -312,18 +374,9 @@ func mustJSON(v any) string {
 	return string(data)
 }
 
-func (e *engine) applyToolSideEffects(sess *types.Session, toolName string, result *types.ToolResult) {
-	if sess == nil || result == nil || result.Error != "" {
-		return
+func nextSessionID(prefix string) string {
+	if strings.TrimSpace(prefix) == "" {
+		prefix = "session"
 	}
-	switch toolName {
-	case "todo_write":
-		var payload struct {
-			Todos []types.TodoItem `json:"todos"`
-		}
-		if err := json.Unmarshal(result.Output, &payload); err != nil {
-			return
-		}
-		sess.Todos = append([]types.TodoItem(nil), payload.Todos...)
-	}
+	return prefix + "-" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 }

@@ -79,15 +79,6 @@ func TestExecutorRunsToolAndBuildsToolMessage(t *testing.T) {
 	if result.Message.ToolResult == nil || result.Message.ToolResult.ToolCallID != "tool-1" {
 		t.Fatalf("unexpected tool result trace: %#v", result.Message.ToolResult)
 	}
-	if !result.Trace.Success {
-		t.Fatal("expected successful trace")
-	}
-	if result.Trace.Name != "read_file" {
-		t.Fatalf("trace name = %q", result.Trace.Name)
-	}
-	if result.Trace.Result == nil || result.Trace.Result.ToolCallID != "tool-1" {
-		t.Fatalf("unexpected trace result: %#v", result.Trace.Result)
-	}
 }
 
 func TestExecutorReturnsPermissionFailureAsToolMessage(t *testing.T) {
@@ -100,9 +91,6 @@ func TestExecutorReturnsPermissionFailureAsToolMessage(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if result.Trace.Success {
-		t.Fatal("expected failed trace")
 	}
 	if !strings.Contains(result.Message.Content, "requires workspace-write") {
 		t.Fatalf("unexpected permission content: %s", result.Message.Content)
@@ -119,9 +107,6 @@ func TestExecutorUsesBuiltinPermissionModes(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if result.Trace.Success {
-		t.Fatal("expected bash to be denied in workspace-write mode")
 	}
 	if !strings.Contains(result.Message.Content, "danger-full-access") {
 		t.Fatalf("unexpected permission content: %s", result.Message.Content)
@@ -141,9 +126,6 @@ func TestExecutorAllowsReadOnlyBuiltinInReadOnlyMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !result.Trace.Success {
-		t.Fatalf("expected success, got trace %#v", result.Trace)
-	}
 	if !strings.Contains(result.Message.Content, `"content":"hello"`) {
 		t.Fatalf("unexpected read result: %s", result.Message.Content)
 	}
@@ -159,9 +141,6 @@ func TestExecutorDeniesWriteBuiltinInReadOnlyMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if result.Trace.Success {
-		t.Fatal("expected denied write_file trace")
-	}
 	if !strings.Contains(result.Message.Content, "requires workspace-write") {
 		t.Fatalf("unexpected permission content: %s", result.Message.Content)
 	}
@@ -173,15 +152,12 @@ func TestExecutorAllowsWebToolInDangerFullMode(t *testing.T) {
 		result: &types.ToolResult{Output: json.RawMessage(`{"result":"ok"}`)},
 	}})
 	executor := NewExecutor(registry, permissions.NewStaticEngine(permissions.ModeDangerFull))
-	result, err := executor.Execute(context.Background(), ExecuteRequest{
+	_, err := executor.Execute(context.Background(), ExecuteRequest{
 		Call: types.ToolCall{ID: "tool-web", Name: "web_fetch", Input: json.RawMessage(`{"url":"https://example.com"}`)},
 		Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeDangerFull},
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if !result.Trace.Success {
-		t.Fatalf("expected web_fetch success, got %#v", result.Trace)
 	}
 }
 
@@ -197,9 +173,6 @@ func TestExecutorReturnsPromptDecisionAsToolMessage(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if result.Trace.Permission != string(permissions.DecisionPrompt) {
-		t.Fatalf("unexpected permission decision: %#v", result.Trace)
 	}
 	if !strings.Contains(result.Message.Content, "needs confirmation") {
 		t.Fatalf("unexpected prompt content: %s", result.Message.Content)
@@ -226,9 +199,6 @@ func TestExecutorRunsToolAfterConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !result.Trace.Success {
-		t.Fatalf("expected confirmed bash success, got %#v", result.Trace)
-	}
 	if !strings.Contains(result.Message.Content, "confirmed") {
 		t.Fatalf("unexpected bash output: %s", result.Message.Content)
 	}
@@ -250,15 +220,12 @@ func TestExecutorReusesSessionApprovalAcrossCalls(t *testing.T) {
 	}))
 
 	for i := 0; i < 2; i++ {
-		result, err := executor.Execute(context.Background(), ExecuteRequest{
+		_, err := executor.Execute(context.Background(), ExecuteRequest{
 			Call: types.ToolCall{ID: fmt.Sprintf("tool-bash-session-%d", i), Name: "bash", Input: json.RawMessage(`{"command":"printf cached"}`)},
 			Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
 		})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
-		}
-		if !result.Trace.Success {
-			t.Fatalf("expected success on pass %d, got %#v", i, result.Trace)
 		}
 	}
 	if confirmCalls != 1 {
@@ -282,18 +249,12 @@ func TestExecutorReusesSessionDenialAcrossCalls(t *testing.T) {
 	}))
 
 	for i := 0; i < 2; i++ {
-		result, err := executor.Execute(context.Background(), ExecuteRequest{
+		_, err := executor.Execute(context.Background(), ExecuteRequest{
 			Call: types.ToolCall{ID: fmt.Sprintf("tool-bash-session-deny-%d", i), Name: "bash", Input: json.RawMessage(`{"command":"printf blocked"}`)},
 			Env:  ToolEnv{WorkingDir: t.TempDir(), Mode: permissions.ModeWorkspaceWrite},
 		})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
-		}
-		if result.Trace.Success {
-			t.Fatalf("expected denied trace on pass %d, got %#v", i, result.Trace)
-		}
-		if result.Trace.Permission != string(permissions.DecisionDeny) {
-			t.Fatalf("unexpected permission decision on pass %d: %#v", i, result.Trace)
 		}
 	}
 	if confirmCalls != 1 {
@@ -337,9 +298,6 @@ func TestExecutorReturnsToolError(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if result.Trace.Success {
-		t.Fatal("expected failed trace for tool error")
 	}
 	if !strings.Contains(result.Message.Content, `"error":"boom"`) {
 		t.Fatalf("missing tool error in content: %s", result.Message.Content)

@@ -1,6 +1,10 @@
 package config
 
-import "claude-go-code/internal/permissions"
+import (
+	"time"
+
+	"claude-go-code/internal/permissions"
+)
 
 type Config struct {
 	WorkingDir string
@@ -9,6 +13,7 @@ type Config struct {
 	Permission PermissionConfig
 	Compact    CompactConfig
 	CLI        CLIConfig
+	Server     ServerConfig
 }
 
 type ProviderConfig struct {
@@ -24,7 +29,9 @@ type EndpointConfig struct {
 }
 
 type SessionConfig struct {
-	StorageDir string
+	StorageDir  string
+	TTL         time.Duration
+	IdleTimeout time.Duration
 }
 
 type PermissionConfig struct {
@@ -39,4 +46,14 @@ type CompactConfig struct {
 
 type CLIConfig struct {
 	Interactive bool
+}
+
+type ServerConfig struct {
+	Host            string
+	Port            int
+	APIKeys         []string
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	MaxConcurrent   int
+	ShutdownTimeout time.Duration
 }

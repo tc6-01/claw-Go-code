@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"claude-go-code/internal/permissions"
 )
@@ -25,8 +27,14 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
 		cfg.Provider.Anthropic.APIKey = v
 	}
+	if v := os.Getenv("ANTHROPIC_BASE_URL"); v != "" {
+		cfg.Provider.Anthropic.BaseURL = v
+	}
 	if v := os.Getenv("OPENAI_API_KEY"); v != "" {
 		cfg.Provider.OpenAI.APIKey = v
+	}
+	if v := os.Getenv("OPENAI_BASE_URL"); v != "" {
+		cfg.Provider.OpenAI.BaseURL = v
 	}
 	if v := os.Getenv("CLAW_PERMISSION_MODE"); v != "" {
 		mode, err := permissions.ParseMode(v)
@@ -46,7 +54,50 @@ func Load(_ context.Context, opts LoadOptions) (Config, error) {
 		cfg.Permission.RulesPath = v
 	}
 
+	if v := os.Getenv("CLAW_SERVER_HOST"); v != "" {
+		cfg.Server.Host = v
+	}
+	if v := os.Getenv("CLAW_SERVER_PORT"); v != "" {
+		port, err := strconv.Atoi(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid CLAW_SERVER_PORT: %w", err)
+		}
+		cfg.Server.Port = port
+	}
+	if v := os.Getenv("CLAW_API_KEYS"); v != "" {
+		cfg.Server.APIKeys = splitCSV(v)
+	}
+	if v := os.Getenv("CLAW_SERVER_READ_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid CLAW_SERVER_READ_TIMEOUT: %w", err)
+		}
+		cfg.Server.ReadTimeout = d
+	}
+	if v := os.Getenv("CLAW_SERVER_WRITE_TIMEOUT"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid CLAW_SERVER_WRITE_TIMEOUT: %w", err)
+		}
+		cfg.Server.WriteTimeout = d
+	}
+	if v := os.Getenv("CLAW_SESSION_STORAGE_DIR"); v != "" {
+		cfg.Session.StorageDir = v
+	}
+
 	return cfg, nil
+}
+
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func parseEscalationPolicy(v string) (permissions.EscalationPolicy, error) {

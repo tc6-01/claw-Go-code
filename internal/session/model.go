@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"claude-go-code/pkg/types"
 )
@@ -18,16 +19,33 @@ type Store interface {
 type InMemoryStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*types.Session
+	metadata map[string]sessionMetadata
+}
+
+type sessionMetadata struct {
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Model     string
+	CWD       string
 }
 
 func NewInMemoryStore() *InMemoryStore {
-	return &InMemoryStore{sessions: make(map[string]*types.Session)}
+	return &InMemoryStore{
+		sessions: make(map[string]*types.Session),
+		metadata: make(map[string]sessionMetadata),
+	}
 }
 
 func (s *InMemoryStore) Create(_ context.Context, session *types.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[session.ID] = cloneSession(session)
+	s.metadata[session.ID] = sessionMetadata{
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Model:     "",
+		CWD:       "",
+	}
 	return nil
 }
 
@@ -35,6 +53,10 @@ func (s *InMemoryStore) Save(_ context.Context, session *types.Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[session.ID] = cloneSession(session)
+	if meta, ok := s.metadata[session.ID]; ok {
+		meta.UpdatedAt = time.Now()
+		s.metadata[session.ID] = meta
+	}
 	return nil
 }
 
@@ -52,13 +74,14 @@ func (s *InMemoryStore) List(_ context.Context) ([]types.SessionSummary, error) 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]types.SessionSummary, 0, len(s.sessions))
-	for _, session := range s.sessions {
+	for id := range s.sessions {
+		meta := s.metadata[id]
 		out = append(out, types.SessionSummary{
-			ID:        session.ID,
-			CreatedAt: session.CreatedAt,
-			UpdatedAt: session.UpdatedAt,
-			Model:     session.Model,
-			CWD:       session.CWD,
+			ID:        id,
+			CreatedAt: meta.CreatedAt,
+			UpdatedAt: meta.UpdatedAt,
+			Model:     meta.Model,
+			CWD:       meta.CWD,
 		})
 	}
 	return out, nil
@@ -70,9 +93,6 @@ func cloneSession(in *types.Session) *types.Session {
 	}
 	copyValue := *in
 	copyValue.Messages = cloneMessages(in.Messages)
-	copyValue.ToolTrace = cloneToolTrace(in.ToolTrace)
-	copyValue.Usage = append([]types.Usage(nil), in.Usage...)
-	copyValue.Todos = append([]types.TodoItem(nil), in.Todos...)
 	return &copyValue
 }
 
@@ -91,18 +111,6 @@ func cloneMessages(in []types.Message) []types.Message {
 		}
 		out[i].ToolCalls = cloneToolCalls(in[i].ToolCalls)
 		out[i].ToolResult = cloneToolResult(in[i].ToolResult)
-	}
-	return out
-}
-
-func cloneToolTrace(in []types.ToolTraceEntry) []types.ToolTraceEntry {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make([]types.ToolTraceEntry, len(in))
-	for i := range in {
-		out[i] = in[i]
-		out[i].Result = cloneToolResult(in[i].Result)
 	}
 	return out
 }

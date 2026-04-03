@@ -3,14 +3,15 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"claude-go-code/internal/permissions"
 )
 
 func DefaultConfig(workingDir string) Config {
 	homeDir, _ := os.UserHomeDir()
-	storageDir := filepath.Join(homeDir, ".claude-go-code", "sessions")
-	rulesPath := filepath.Join(homeDir, ".claude-go-code", "permissions", "rules.json")
+	storageDir := filepath.Join(homeDir, ".claw", "sessions")
+	rulesPath := filepath.Join(homeDir, ".claw", "permissions", "rules.json")
 
 	return Config{
 		WorkingDir: workingDir,
@@ -20,7 +21,11 @@ func DefaultConfig(workingDir string) Config {
 			Anthropic:       EndpointConfig{BaseURL: "https://api.anthropic.com"},
 			OpenAI:          EndpointConfig{BaseURL: "https://api.openai.com/v1"},
 		},
-		Session: SessionConfig{StorageDir: storageDir},
+		Session: SessionConfig{
+			StorageDir:  storageDir,
+			TTL:         24 * time.Hour,
+			IdleTimeout: 1 * time.Hour,
+		},
 		Permission: PermissionConfig{
 			Mode:             permissions.ModeWorkspaceWrite,
 			EscalationPolicy: permissions.EscalationDeny,
@@ -28,5 +33,13 @@ func DefaultConfig(workingDir string) Config {
 		},
 		Compact: CompactConfig{Enabled: true},
 		CLI:     CLIConfig{Interactive: true},
+		Server: ServerConfig{
+			Host:            "0.0.0.0",
+			Port:            8080,
+			ReadTimeout:     30 * time.Second,
+			WriteTimeout:    300 * time.Second,
+			MaxConcurrent:   100,
+			ShutdownTimeout: 30 * time.Second,
+		},
 	}
 }

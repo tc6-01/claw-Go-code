@@ -15,7 +15,7 @@ import (
 func TestBuiltinToolsRegisterExpectedNames(t *testing.T) {
 	registry := NewRegistry(BuiltinTools())
 	got := SpecNames(registry.Specs())
-	want := []string{"bash", "edit_file", "glob_search", "grep_search", "read_file", "todo_write", "web_fetch", "web_search", "write_file"}
+	want := []string{"bash", "edit_file", "glob_search", "grep_search", "read_file", "write_file"}
 	if len(got) != len(want) {
 		t.Fatalf("len(specs) = %d, want %d", len(got), len(want))
 	}
@@ -114,19 +114,6 @@ func TestBashReturnsExitCodeAndOutput(t *testing.T) {
 	}
 	if payload.Stdout != "hi" || payload.Stderr != "warn" {
 		t.Fatalf("unexpected streams: %#v", payload)
-	}
-}
-
-func TestTodoWriteReturnsTodoList(t *testing.T) {
-	root := t.TempDir()
-	result := executeToolForTest(t, newTodoWriteTool(), root, permissions.ModeWorkspaceWrite, `{"todos":[{"content":"ship m4"},{"content":"run tests","done":true}]}`)
-	var payload todoWriteOutput
-	decodeToolOutput(t, result, &payload)
-	if payload.Count != 2 {
-		t.Fatalf("count = %d, want 2", payload.Count)
-	}
-	if payload.Todos[1].Content != "run tests" || !payload.Todos[1].Done {
-		t.Fatalf("unexpected todos: %#v", payload.Todos)
 	}
 }
 

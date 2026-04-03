@@ -73,3 +73,30 @@ func TestNewUsesConfiguredOpenAIProvider(t *testing.T) {
 		t.Fatal("expected persisted usage on assistant message")
 	}
 }
+
+func TestAppCreateSessionAndRunPrompt(t *testing.T) {
+	cfg := config.DefaultConfig(t.TempDir())
+	cfg.Provider.DefaultProvider = "noop"
+	cfg.Provider.DefaultModel = "noop-model"
+
+	application, err := New(cfg)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+
+	sess, err := application.CreateSession(context.Background())
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if sess.ID == "" {
+		t.Fatal("expected session id")
+	}
+
+	result, err := application.RunPrompt(context.Background(), sess.ID, "hello")
+	if err != nil {
+		t.Fatalf("run prompt: %v", err)
+	}
+	if !strings.Contains(result.Assistant.Content, "runtime skeleton ready") {
+		t.Fatalf("unexpected assistant response %q", result.Assistant.Content)
+	}
+}
